@@ -14,6 +14,7 @@ ts-model.workspace = true
 ts-store.workspace = true
 ts-index.workspace = true
 ts-activate.workspace = true
+ts-search.workspace = true
 anyhow.workspace = true
 clap.workspace = true
 directories.workspace = true

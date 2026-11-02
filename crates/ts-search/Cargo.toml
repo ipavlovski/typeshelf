@@ -1,0 +1,21 @@
+[package]
+name = "ts-search"
+description = "In-memory font search for typeshelf: fuzzy names, facets, ranges"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+ts-model.workspace = true
+ts-store.workspace = true
+anyhow.workspace = true
+nucleo-matcher = "0.3"
+roaring = "0.12"
+unicode-normalization = "0.1"
+
+[dev-dependencies]
+criterion = "0.8"
+
+[[bench]]
+name = "search"
+harness = false

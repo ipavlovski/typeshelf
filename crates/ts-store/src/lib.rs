@@ -1,6 +1,7 @@
 //! SQLite persistence for the font index, organisation data and the activation journal.
 
 mod journal;
+mod org;
 mod schema;
 
 use std::collections::HashMap;
@@ -11,6 +12,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use ts_model::{Axis, Coverage, FaceInfo, FaceKey, FileHash, FontFormat};
 
 pub use journal::{Activation, JournalState};
+pub use org::Collection;
 
 pub struct Store {
     conn: Connection,

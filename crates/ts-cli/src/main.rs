@@ -40,6 +40,13 @@ enum Command {
     Errors,
     /// Keep the index up to date while folders change.
     Watch,
+    /// Search the library, e.g. `garamond script:cyrillic wght:>600 is:active`.
+    Search {
+        query: Vec<String>,
+        /// Families to show.
+        #[arg(long, default_value_t = 20)]
+        limit: usize,
+    },
     /// Activate fonts matching a family, full name or PostScript name.
     Activate {
         query: String,
@@ -119,6 +126,7 @@ fn main() -> Result<()> {
             }
         }
         Command::Stats => print_stats(&store)?,
+        Command::Search { query, limit } => search(&store, &query.join(" "), limit)?,
         Command::Dupes => {
             for (hash, paths) in store.duplicates()? {
                 println!("{hash}");
@@ -188,6 +196,28 @@ fn index(store: &mut Store, folder: &Folder) -> Result<()> {
         report.failed,
         report.elapsed
     );
+    Ok(())
+}
+
+fn search(store: &Store, query: &str, limit: usize) -> Result<()> {
+    let started = std::time::Instant::now();
+    let snap = ts_search::Snapshot::load(store)?;
+    let loaded = started.elapsed();
+    let started = std::time::Instant::now();
+    let res = snap.search(&ts_search::Query::parse(query), &|| false).unwrap_or_default();
+    let took = started.elapsed();
+    for (fam, faces) in res.families.iter().take(limit) {
+        let active = faces.iter().filter(|&&f| snap.is_active(f)).count();
+        let dot = if active == 0 {
+            " "
+        } else if active == faces.len() {
+            "●"
+        } else {
+            "◐"
+        };
+        println!("{dot} {:<40} {} styles", snap.families[*fam as usize].name, faces.len());
+    }
+    eprintln!("{} families, {} faces (snapshot {:.0?}, query {:.2?})", res.families.len(), res.faces, loaded, took);
     Ok(())
 }
 

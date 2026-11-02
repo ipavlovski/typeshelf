@@ -13,6 +13,7 @@ ts-model = { path = "crates/ts-model" }
 ts-store = { path = "crates/ts-store" }
 ts-index = { path = "crates/ts-index" }
 ts-activate = { path = "crates/ts-activate" }
+ts-search = { path = "crates/ts-search" }
 
 anyhow = "1"
 thiserror = "2"
