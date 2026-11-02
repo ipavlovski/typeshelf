@@ -19,7 +19,7 @@ pub fn fontbase(
     let root = root.or_else(|| ts_import_fontbase::root_path(&fb));
     match &root {
         Some(r) if r.is_dir() => {
-            let known = store.folders()?.into_iter().find(|f| PathBuf::from(&f.path) == *r);
+            let known = store.folders()?.into_iter().find(|f| Path::new(&f.path) == r.as_path());
             match known {
                 Some(f) if dry_run => println!("Root {} (already indexed)", f.path),
                 Some(f) => crate::index(store, &f)?,
