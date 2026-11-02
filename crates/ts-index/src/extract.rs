@@ -77,6 +77,8 @@ fn face(font: &FontRef, index: u32, container: FontFormat, stem: &str) -> FaceIn
     let coverage = Coverage::from_codepoints(charmap.mappings().map(|(cp, _)| cp));
     let sample = pick_sample(DEFAULT_SAMPLE, |c| charmap.map(c).is_some(), charmap.mappings().map(|(cp, _)| cp));
 
+    let metrics = crate::metrics::measure(font).unwrap_or_default();
+
     FaceInfo {
         index,
         family,
@@ -98,5 +100,6 @@ fn face(font: &FontRef, index: u32, container: FontFormat, stem: &str) -> FaceIn
         vendor: os2.as_ref().map(|t| clean(&t.ach_vend_id().to_string())).unwrap_or_default(),
         license,
         sample,
+        metrics,
     }
 }

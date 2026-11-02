@@ -4407,6 +4407,7 @@ dependencies = [
  "ts-store",
  "walkdir",
  "xxhash-rust",
+ "zeno",
 ]
 
 [[package]]

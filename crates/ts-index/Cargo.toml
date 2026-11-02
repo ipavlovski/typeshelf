@@ -15,6 +15,7 @@ read-fonts.workspace = true
 skrifa.workspace = true
 walkdir.workspace = true
 xxhash-rust.workspace = true
+zeno = "0.3"
 
 [dev-dependencies]
 tempfile.workspace = true

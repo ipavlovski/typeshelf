@@ -38,6 +38,7 @@ fn face(n: u64, family: &str, sub: &str, weight: u16) -> FaceRow {
             vendor: String::new(),
             license: String::new(),
             sample: String::new(),
+            metrics: Default::default(),
         },
     }
 }

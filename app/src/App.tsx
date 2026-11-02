@@ -6,6 +6,7 @@ import { FontList } from "./FontList";
 import { Detail } from "./Detail";
 import { GoogleList } from "./GoogleList";
 import { ImportDialog } from "./ImportDialog";
+import { ShapeFilters, rangesToQuery, type Ranges } from "./ShapeFilters";
 
 interface Progress {
   folder: string;
@@ -24,6 +25,9 @@ export function App() {
   const [toast, setToast] = useState<string | null>(null);
   const [progress, setProgress] = useState<Progress | null>(null);
   const [importing, setImporting] = useState(false);
+  const [showShape, setShowShape] = useState(false);
+  const [ranges, setRanges] = useState<Ranges>({});
+  const [libraryVersion, setLibraryVersion] = useState(0);
   const toastTimer = useRef<number>(undefined);
 
   const notify = useCallback((msg: string) => {
@@ -36,7 +40,7 @@ export function App() {
 
   const runSearch = useCallback(async () => {
     try {
-      const res = await api.search(query, scope);
+      const res = await api.search(`${query} ${rangesToQuery(ranges)}`, scope);
       // null = superseded by a newer keystroke.
       if (res) {
         setResult(res);
@@ -45,7 +49,7 @@ export function App() {
     } catch (e) {
       notify(String(e));
     }
-  }, [query, scope, notify]);
+  }, [query, ranges, scope, notify]);
 
   useEffect(() => {
     api.getSettings().then(setSettings);
@@ -54,6 +58,7 @@ export function App() {
       listen<Progress>("index-progress", (e) => setProgress(e.payload.done < e.payload.total ? e.payload : null)),
       listen("library-changed", () => {
         setProgress(null);
+        setLibraryVersion((v) => v + 1);
         refreshLibrary();
         runSearchRef.current();
       }),
@@ -137,12 +142,20 @@ export function App() {
             />
             <span>{settings.size}px</span>
           </label>
+          <button
+            className={showShape || Object.keys(ranges).length ? "on" : "ghost"}
+            onClick={() => setShowShape(!showShape)}
+            title="Filter by measured x-height, weight, width and contrast"
+          >
+            Shape{Object.keys(ranges).length ? ` (${Object.keys(ranges).length})` : ""}
+          </button>
           {library?.active ? (
             <button className="ghost" onClick={() => activation(api.deactivateAll())} title="Deactivate every session font">
               Deactivate all
             </button>
           ) : null}
         </header>
+        {showShape && scope.kind !== "google" && <ShapeFilters ranges={ranges} onChange={setRanges} version={libraryVersion} />}
         {selected.size > 0 && (
           <div className="selection-bar">
             <span>{selected.size} families selected</span>

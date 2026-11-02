@@ -118,6 +118,14 @@ export interface GoogleFamily {
   installed: boolean;
 }
 
+export interface Histogram {
+  key: string;
+  label: string;
+  min: number;
+  max: number;
+  bins: number[];
+}
+
 export const DEFAULT_SAMPLE = "The quick brown fox jumps over the lazy dog";
 export const DEFAULT_SETTINGS: Settings = { sample: DEFAULT_SAMPLE, size: 42 };
 
@@ -145,6 +153,7 @@ export const api = {
   fontbaseImport: (download: boolean, activate: "none" | "session" | "pinned") =>
     invoke<ImportResult>("fontbase_import", { options: { download, activate } }),
   downloadPending: () => invoke<number>("download_pending_fonts"),
+  metricHistograms: () => invoke<Histogram[]>("metric_histograms"),
   googleCatalogue: () => invoke<GoogleFamily[]>("google_catalogue"),
   googleInstall: (family: string) => invoke<FaceId[]>("google_install", { family }),
 };

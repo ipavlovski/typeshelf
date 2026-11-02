@@ -359,6 +359,29 @@ pub async fn set_settings(state: State<'_, AppState>, settings: serde_json::Valu
     state.store.lock().unwrap().set_setting("ui", &settings.to_string()).map_err(err)
 }
 
+#[derive(Serialize)]
+pub struct Histogram {
+    pub key: &'static str,
+    pub label: &'static str,
+    pub min: f32,
+    pub max: f32,
+    pub bins: Vec<u32>,
+}
+
+/// Distributions of the shape metrics, for the SuperSearch range sliders.
+#[tauri::command]
+pub async fn metric_histograms(state: State<'_, AppState>) -> Res<Vec<Histogram>> {
+    let snap = state.snap.read().unwrap();
+    let metrics = [("xheight", "x-height"), ("stem", "Weight"), ("width", "Width"), ("contrast", "Contrast")];
+    Ok(metrics
+        .into_iter()
+        .filter_map(|(key, label)| {
+            let (min, max, bins) = snap.histogram(key, 48)?;
+            Some(Histogram { key, label, min, max, bins })
+        })
+        .collect())
+}
+
 /// Raw font bytes for the detail page, which loads one font with the FontFace API.
 #[tauri::command]
 pub async fn font_bytes(state: State<'_, AppState>, face: FaceId) -> Res<tauri::ipc::Response> {

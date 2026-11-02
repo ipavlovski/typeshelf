@@ -659,3 +659,94 @@ input:focus {
   color: white;
   border-color: var(--accent);
 }
+
+/* SuperSearch */
+.toolbar button.on {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.shape-filters {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 18px;
+  padding: 10px 14px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.metric-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  height: 22px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.metric-head button {
+  padding: 0 4px;
+  font-size: 11px;
+}
+
+.hist {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  gap: 1px;
+  height: 40px;
+}
+
+.hist div {
+  flex: 1;
+  min-height: 1px;
+  background: color-mix(in srgb, var(--muted) 45%, transparent);
+  border-radius: 1px 1px 0 0;
+}
+
+.hist div.in {
+  background: var(--accent);
+}
+
+.hist .hist-range {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  pointer-events: none;
+}
+
+.dual {
+  position: relative;
+  height: 18px;
+}
+
+.dual input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  margin: 0;
+  pointer-events: none;
+  background: none;
+  appearance: none;
+}
+
+.dual input::-webkit-slider-thumb {
+  pointer-events: auto;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--bg);
+  cursor: pointer;
+}
+
+.dual input::-webkit-slider-runnable-track {
+  height: 2px;
+  background: var(--line);
+}
+
+.dual input::-webkit-slider-thumb {
+  margin-top: -5px;
+}

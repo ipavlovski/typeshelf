@@ -39,6 +39,15 @@ pub fn run() {
             let _ = platform::enable_logon_reconcile();
             platform::install_session_end_hook(app.handle().clone());
             watch::restart(app.handle());
+            // Catch up with changes made while the app was closed (incremental: unchanged files are skipped).
+            let handle = app.handle().clone();
+            std::thread::spawn(move || {
+                let state = handle.state::<AppState>();
+                let folders = state.store.lock().unwrap().folders().unwrap_or_default();
+                for folder in &folders {
+                    let _ = commands::reindex(&handle, &state, folder);
+                }
+            });
 
             let show = MenuItem::with_id(app, "show", "Show typeshelf", true, None::<&str>)?;
             let deactivate = MenuItem::with_id(app, "deactivate", "Deactivate session fonts", true, None::<&str>)?;
@@ -91,6 +100,7 @@ pub fn run() {
             commands::set_settings,
             commands::font_bytes,
             commands::face_codepoints,
+            commands::metric_histograms,
             commands::reveal,
             providers::fontbase_preview,
             providers::fontbase_import,

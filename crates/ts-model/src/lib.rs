@@ -122,6 +122,19 @@ pub struct Axis {
     pub max: f32,
 }
 
+/// Shape metrics measured from outlines; `None` when the glyphs needed are missing.
+#[derive(Clone, Copy, PartialEq, Default, Debug)]
+pub struct Metrics {
+    /// x-height / cap height.
+    pub x_height: Option<f32>,
+    /// Vertical stem thickness / cap height.
+    pub weight: Option<f32>,
+    /// Average letter advance / cap height.
+    pub width: Option<f32>,
+    /// 1 - thin stroke / thick stroke of an O (0 = monolinear).
+    pub contrast: Option<f32>,
+}
+
 /// Everything the indexer extracts from one face.
 #[derive(Clone, PartialEq, Debug)]
 pub struct FaceInfo {
@@ -151,6 +164,7 @@ pub struct FaceInfo {
     pub license: String,
     /// Text the font can actually draw, for previews.
     pub sample: String,
+    pub metrics: Metrics,
 }
 
 impl FaceInfo {

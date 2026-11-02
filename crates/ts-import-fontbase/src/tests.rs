@@ -35,6 +35,7 @@ fn store_with(fonts: &[(&str, &str, u64)]) -> Store {
                 vendor: String::new(),
                 license: String::new(),
                 sample: String::new(),
+                metrics: Default::default(),
             }],
         })
         .collect();

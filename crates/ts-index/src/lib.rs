@@ -1,6 +1,7 @@
 //! Finds font files, hashes and parses them in parallel, and writes the results to the store.
 
 mod extract;
+mod metrics;
 mod names;
 mod sample;
 mod watch;
@@ -229,6 +230,17 @@ mod tests {
         let dingbats = by_ps(&store, "FixtureDingbats-Regular");
         assert!(dingbats.coverage.has(Block::Dingbats));
         assert!(dingbats.sample.starts_with('\u{2701}'));
+    }
+
+    #[test]
+    fn measures_shape_metrics() {
+        // Fixture glyphs are boxes: capitals 700 units tall, lowercase 500, 500 wide.
+        let (store, _, _) = indexed();
+        let m = by_ps(&store, "FixtureSans-Light").metrics;
+        assert!((m.x_height.unwrap() - 500.0 / 700.0).abs() < 0.02, "{m:?}");
+        assert!((m.weight.unwrap() - 500.0 / 700.0).abs() < 0.02, "{m:?}");
+        assert!((m.width.unwrap() - 600.0 / 700.0).abs() < 0.02, "{m:?}");
+        assert!(by_ps(&store, "FixtureDingbats-Regular").metrics == Default::default());
     }
 
     #[test]

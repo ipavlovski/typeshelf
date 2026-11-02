@@ -9,7 +9,7 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 use rusqlite::{Connection, OptionalExtension, params};
-use ts_model::{Axis, Coverage, FaceInfo, FaceKey, FileHash, FontFormat};
+use ts_model::{Axis, Coverage, FaceInfo, FaceKey, FileHash, FontFormat, Metrics};
 
 pub use journal::{Activation, JournalState};
 pub use org::Collection;
@@ -165,9 +165,9 @@ impl Store {
             let mut insert = tx.prepare_cached(
                 "INSERT INTO faces (file_id, hash, face_index, family, family_raw, subfamily, full_name, ps_name,
                    weight, width, italic, format, glyph_count, units_per_em, x_height, cap_height, axes,
-                   features, coverage, vendor, license, sample)
+                   features, coverage, vendor, license, sample, m_x_height, m_weight, m_width, m_contrast)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19,
-                   ?20, ?21, ?22)",
+                   ?20, ?21, ?22, ?23, ?24, ?25, ?26)",
             )?;
             for rec in records {
                 let (status, error) = match &rec.status {
@@ -205,6 +205,10 @@ impl Store {
                         f.vendor,
                         f.license,
                         f.sample,
+                        f.metrics.x_height,
+                        f.metrics.weight,
+                        f.metrics.width,
+                        f.metrics.contrast,
                     ])?;
                 }
             }
@@ -275,7 +279,8 @@ impl Store {
         let mut stmt = self.conn.prepare(
             "SELECT f.hash, f.face_index, files.path, files.folder_id, f.family, f.family_raw, f.subfamily,
                f.full_name, f.ps_name, f.weight, f.width, f.italic, f.format, f.glyph_count, f.units_per_em,
-               f.x_height, f.cap_height, f.axes, f.features, f.coverage, f.vendor, f.license, f.sample
+               f.x_height, f.cap_height, f.axes, f.features, f.coverage, f.vendor, f.license, f.sample,
+               f.m_x_height, f.m_weight, f.m_width, f.m_contrast
              FROM faces f JOIN files ON files.id = f.file_id
              ORDER BY f.family COLLATE NOCASE, f.weight, f.italic, f.subfamily",
         )?;
@@ -307,6 +312,12 @@ impl Store {
                     vendor: r.get(20)?,
                     license: r.get(21)?,
                     sample: r.get(22)?,
+                    metrics: Metrics {
+                        x_height: r.get(23)?,
+                        weight: r.get(24)?,
+                        width: r.get(25)?,
+                        contrast: r.get(26)?,
+                    },
                 },
             })
         })?;
@@ -372,6 +383,7 @@ mod tests {
             vendor: "TSHF".into(),
             license: String::new(),
             sample: "Abc".into(),
+            metrics: Metrics { x_height: Some(0.7), weight: None, width: Some(0.5), contrast: Some(0.25) },
         }
     }
 

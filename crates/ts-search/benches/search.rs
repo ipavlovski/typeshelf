@@ -60,6 +60,7 @@ fn synthetic(n: usize) -> Vec<FaceRow> {
                     vendor: String::new(),
                     license: String::new(),
                     sample: String::new(),
+                    metrics: Default::default(),
                 },
             }
         })

@@ -139,6 +139,13 @@ impl Snapshot {
             cols.entry("wght").or_default().push((info.weight as f32, id));
             cols.entry("wdth").or_default().push((info.width as f32, id));
             cols.entry("glyphs").or_default().push((info.glyph_count as f32, id));
+            let m = &info.metrics;
+            for (key, v) in [("xheight", m.x_height), ("stem", m.weight), ("width", m.width), ("contrast", m.contrast)]
+            {
+                if let Some(v) = v {
+                    cols.entry(key).or_default().push((v, id));
+                }
+            }
         }
         // Haystack = family name + its style words, so "garamond bold italic" finds the family.
         for (fam, styles) in snap.families.iter_mut().zip(styles) {
@@ -194,6 +201,21 @@ impl Snapshot {
         let mut v: Vec<(f32, FaceId)> = values.into_iter().map(|(id, x)| (x, id)).collect();
         v.sort_by(|a, b| a.0.total_cmp(&b.0));
         self.columns.insert(key.to_owned(), SortedColumn(v));
+    }
+
+    /// Value counts per bin over `[min, max]` of a numeric column, for range-slider histograms.
+    pub fn histogram(&self, key: &str, bins: usize) -> Option<(f32, f32, Vec<u32>)> {
+        let col = &self.columns.get(key)?.0;
+        // Trim outliers so one broken font does not squash the chart.
+        let lo = col.get(col.len() / 100)?.0;
+        let hi = col.get(col.len() - 1 - col.len() / 100)?.0;
+        let span = (hi - lo).max(f32::EPSILON);
+        let mut counts = vec![0u32; bins];
+        for &(v, _) in col {
+            let b = (((v - lo) / span) * bins as f32).floor().clamp(0.0, bins as f32 - 1.0) as usize;
+            counts[b] += 1;
+        }
+        Some((lo, hi, counts))
     }
 
     pub fn family_of(&self, face: FaceId) -> FamilyId {

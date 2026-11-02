@@ -102,6 +102,14 @@ CREATE TABLE pending_members (
     PRIMARY KEY (collection_id, ps_name)
 );
 "#,
+    r#"
+ALTER TABLE faces ADD COLUMN m_x_height REAL;
+ALTER TABLE faces ADD COLUMN m_weight REAL;
+ALTER TABLE faces ADD COLUMN m_width REAL;
+ALTER TABLE faces ADD COLUMN m_contrast REAL;
+-- Forces the next index run to re-read every file and measure it.
+UPDATE files SET mtime = -1;
+"#,
 ];
 
 pub fn migrate(conn: &Connection) -> Result<()> {

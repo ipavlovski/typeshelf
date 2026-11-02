@@ -45,7 +45,8 @@ def build(chars, names, *, cff=False, weight=400, italic=False, features=None, v
     def draw(pen, name):
         if name == "space":
             return
-        top = 500 if name.startswith("uni00") and name[-2:].islower() else 700
+        lower = name.startswith("uni") and 0x61 <= int(name[3:7], 16) <= 0x7A
+        top = 500 if lower else 700
         box(pen, 50, 0, 550, top)
 
     if cff:
