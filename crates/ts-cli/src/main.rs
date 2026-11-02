@@ -1,4 +1,5 @@
 mod activation;
+mod render;
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -46,6 +47,24 @@ enum Command {
         /// Families to show.
         #[arg(long, default_value_t = 20)]
         limit: usize,
+    },
+    /// Render previews of matching faces as WebP files into a folder.
+    Render {
+        query: String,
+        #[arg(long, default_value = ts_index::DEFAULT_SAMPLE)]
+        text: String,
+        #[arg(long, default_value_t = 64)]
+        size: u32,
+        #[arg(long, default_value = ".")]
+        out: PathBuf,
+    },
+    /// Pre-render list thumbnails for the whole library.
+    Thumbs {
+        #[arg(long, default_value = ts_index::DEFAULT_SAMPLE)]
+        text: String,
+        /// Pixel sizes to render.
+        #[arg(long, value_delimiter = ',', default_value = "32,64")]
+        sizes: Vec<u32>,
     },
     /// Activate fonts matching a family, full name or PostScript name.
     Activate {
@@ -127,6 +146,8 @@ fn main() -> Result<()> {
         }
         Command::Stats => print_stats(&store)?,
         Command::Search { query, limit } => search(&store, &query.join(" "), limit)?,
+        Command::Render { query, text, size, out } => render::render(&store, &query, &text, size, &out)?,
+        Command::Thumbs { text, sizes } => render::thumbs(&store, &db, &text, &sizes)?,
         Command::Dupes => {
             for (hash, paths) in store.duplicates()? {
                 println!("{hash}");
