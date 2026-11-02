@@ -40,14 +40,24 @@ pub trait Backend: Send + Sync {
     fn flush(&self);
 }
 
-/// The backend for the current OS, if one exists yet.
+/// App name for OS entries (registry tag, font folder, logon task) of the released app.
+pub const APP: &str = "typeshelf";
+
+/// The backend for the current OS, for the released app.
 pub fn platform() -> Option<Box<dyn Backend>> {
+    platform_for(APP)
+}
+
+/// The backend for the current OS. `app` keeps side-by-side installs (typeshelf and
+/// the typeshelf-dev preview) from seeing each other's fonts as orphans.
+#[cfg_attr(target_os = "macos", allow(unused_variables))]
+pub fn platform_for(app: &str) -> Option<Box<dyn Backend>> {
     #[cfg(windows)]
-    return Some(Box::new(windows::WindowsBackend::default()));
+    return Some(Box::new(windows::WindowsBackend::new(app)));
     #[cfg(target_os = "macos")]
     return Some(Box::new(macos::MacBackend));
     #[cfg(all(unix, not(target_os = "macos")))]
-    return linux::LinuxBackend::default_location().map(|b| Box::new(b) as Box<dyn Backend>);
+    return linux::LinuxBackend::default_location(app).map(|b| Box::new(b) as Box<dyn Backend>);
     #[allow(unreachable_code)]
     None
 }

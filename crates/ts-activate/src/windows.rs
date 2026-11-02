@@ -27,9 +27,6 @@ use crate::Backend;
 
 const FONTS_KEY: &str = r"Software\Microsoft\Windows NT\CurrentVersion\Fonts";
 const RUN_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
-const RUN_VALUE: &str = "typeshelf-reconcile";
-/// Every value we write carries this, so reconcile can find our entries and never touches others.
-const MARKER: &str = " [typeshelf ";
 /// GDI reference-counts loads (another app may have loaded the file too).
 const MAX_REMOVALS: usize = 16;
 
@@ -38,12 +35,25 @@ const MAX_REMOVALS: usize = 16;
 /// A second broadcast after this delay catches them.
 const SETTLE: Duration = Duration::from_millis(250);
 
-#[derive(Default)]
 pub struct WindowsBackend {
+    /// Carried by every registry value we write (" [typeshelf "), so reconcile finds
+    /// our entries and never touches others; each app channel has its own.
+    marker: String,
     /// NUL-terminated paths waiting for `RemoveFontResourceExW`.
     pending_removals: Mutex<Vec<Vec<u16>>>,
     registered: AtomicBool,
     settle: Mutex<Option<JoinHandle<()>>>,
+}
+
+impl WindowsBackend {
+    pub fn new(app: &str) -> Self {
+        Self {
+            marker: format!(" [{app} "),
+            pending_removals: Mutex::default(),
+            registered: AtomicBool::default(),
+            settle: Mutex::default(),
+        }
+    }
 }
 
 impl Drop for WindowsBackend {
@@ -57,7 +67,7 @@ impl Drop for WindowsBackend {
 
 impl Backend for WindowsBackend {
     fn os_key(&self, name: &str, hash: FileHash) -> String {
-        format!("{name}{MARKER}{hash}]")
+        format!("{name}{}{hash}]", self.marker)
     }
 
     fn register(&self, path: &Path, os_key: &str, _mode: ActivationMode) -> Result<()> {
@@ -81,7 +91,7 @@ impl Backend for WindowsBackend {
         let key = CURRENT_USER.create(FONTS_KEY)?;
         Ok(key
             .values()?
-            .filter(|(name, _)| name.contains(MARKER))
+            .filter(|(name, _)| name.contains(&self.marker))
             .filter_map(|(name, value)| Some((name, String::try_from(value).ok()?)))
             .collect())
     }
@@ -141,20 +151,21 @@ fn wide(path: &Path) -> Vec<u16> {
 
 /// Registers `args` to run at every logon (HKCU Run), so session fonts left by a
 /// crash or power-off are cleared even if the app is never started.
-pub fn enable_logon_reconcile(exe: &Path, args: &str) -> Result<()> {
+pub fn enable_logon_reconcile(app: &str, exe: &Path, args: &str) -> Result<()> {
     let cmd = format!("\"{}\" {args}", exe.display());
-    CURRENT_USER.create(RUN_KEY)?.set_string(RUN_VALUE, &cmd)?;
+    CURRENT_USER.create(RUN_KEY)?.set_string(format!("{app}-reconcile"), &cmd)?;
     Ok(())
 }
 
-pub fn disable_logon_reconcile() -> Result<()> {
+pub fn disable_logon_reconcile(app: &str) -> Result<()> {
     let key = CURRENT_USER.create(RUN_KEY)?;
-    if key.get_string(RUN_VALUE).is_ok() {
-        key.remove_value(RUN_VALUE)?;
+    let value = format!("{app}-reconcile");
+    if key.get_string(&value).is_ok() {
+        key.remove_value(&value)?;
     }
     Ok(())
 }
 
-pub fn logon_reconcile_command() -> Option<String> {
-    CURRENT_USER.open(RUN_KEY).ok()?.get_string(RUN_VALUE).ok()
+pub fn logon_reconcile_command(app: &str) -> Option<String> {
+    CURRENT_USER.open(RUN_KEY).ok()?.get_string(format!("{app}-reconcile")).ok()
 }

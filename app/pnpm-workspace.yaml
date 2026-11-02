@@ -1,0 +1,2 @@
+allowBuilds:
+  esbuild: true # tsx (scripts/) runs on it

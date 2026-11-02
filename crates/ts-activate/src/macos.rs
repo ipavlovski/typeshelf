@@ -105,15 +105,18 @@ impl Backend for MacBackend {
     fn flush(&self) {}
 }
 
-const AGENT: &str = "app.typeshelf.reconcile";
+fn agent_label(app: &str) -> String {
+    format!("app.{app}.reconcile")
+}
 
-fn agent_file() -> Option<PathBuf> {
-    Some(PathBuf::from(std::env::var_os("HOME")?).join(format!("Library/LaunchAgents/{AGENT}.plist")))
+fn agent_file(app: &str) -> Option<PathBuf> {
+    Some(PathBuf::from(std::env::var_os("HOME")?).join(format!("Library/LaunchAgents/{}.plist", agent_label(app))))
 }
 
 /// Runs `exe args…` at every login through a LaunchAgent.
-pub fn enable_logon_reconcile(exe: &Path, args: &str) -> Result<()> {
-    let file = agent_file().context("no home directory")?;
+pub fn enable_logon_reconcile(app: &str, exe: &Path, args: &str) -> Result<()> {
+    let file = agent_file(app).context("no home directory")?;
+    let label = agent_label(app);
     std::fs::create_dir_all(file.parent().unwrap())?;
     let mut program = format!("<string>{}</string>", exe.display());
     for a in args.split_whitespace() {
@@ -123,7 +126,7 @@ pub fn enable_logon_reconcile(exe: &Path, args: &str) -> Result<()> {
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-<key>Label</key><string>{AGENT}</string>
+<key>Label</key><string>{label}</string>
 <key>ProgramArguments</key><array>{program}</array>
 <key>RunAtLoad</key><true/>
 </dict></plist>
@@ -133,13 +136,13 @@ pub fn enable_logon_reconcile(exe: &Path, args: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn disable_logon_reconcile() -> Result<()> {
-    if let Some(file) = agent_file().filter(|f| f.exists()) {
+pub fn disable_logon_reconcile(app: &str) -> Result<()> {
+    if let Some(file) = agent_file(app).filter(|f| f.exists()) {
         std::fs::remove_file(file)?;
     }
     Ok(())
 }
 
-pub fn logon_reconcile_command() -> Option<String> {
-    agent_file().filter(|f| f.exists()).map(|f| f.display().to_string())
+pub fn logon_reconcile_command(app: &str) -> Option<String> {
+    agent_file(app).filter(|f| f.exists()).map(|f| f.display().to_string())
 }

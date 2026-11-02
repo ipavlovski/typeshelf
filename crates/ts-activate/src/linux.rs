@@ -31,8 +31,8 @@ impl LinuxBackend {
         Self { base, dirty: AtomicBool::new(false) }
     }
 
-    pub fn default_location() -> Option<Self> {
-        Some(Self::new(data_home()?.join("fonts/typeshelf")))
+    pub fn default_location(app: &str) -> Option<Self> {
+        Some(Self::new(data_home()?.join("fonts").join(app)))
     }
 
     fn dir(&self, mode: ActivationMode) -> PathBuf {
@@ -129,36 +129,34 @@ fn set_mtime(dir: &Path, secs: u64) {
     }
 }
 
-const AUTOSTART: &str = "typeshelf-reconcile.desktop";
-
-fn autostart_file() -> Option<PathBuf> {
+fn autostart_file(app: &str) -> Option<PathBuf> {
     let config = std::env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))?;
-    Some(config.join("autostart").join(AUTOSTART))
+    Some(config.join("autostart").join(format!("{app}-reconcile.desktop")))
 }
 
 /// Runs `args` at every login through an XDG autostart entry.
-pub fn enable_logon_reconcile(exe: &Path, args: &str) -> Result<()> {
-    let file = autostart_file().context("no home directory")?;
+pub fn enable_logon_reconcile(app: &str, exe: &Path, args: &str) -> Result<()> {
+    let file = autostart_file(app).context("no home directory")?;
     std::fs::create_dir_all(file.parent().unwrap())?;
     let entry = format!(
-        "[Desktop Entry]\nType=Application\nName=typeshelf font cleanup\nExec=\"{}\" {args}\nNoDisplay=true\nX-GNOME-Autostart-enabled=true\n",
+        "[Desktop Entry]\nType=Application\nName={app} font cleanup\nExec=\"{}\" {args}\nNoDisplay=true\nX-GNOME-Autostart-enabled=true\n",
         exe.display()
     );
     std::fs::write(&file, entry)?;
     Ok(())
 }
 
-pub fn disable_logon_reconcile() -> Result<()> {
-    if let Some(file) = autostart_file().filter(|f| f.exists()) {
+pub fn disable_logon_reconcile(app: &str) -> Result<()> {
+    if let Some(file) = autostart_file(app).filter(|f| f.exists()) {
         std::fs::remove_file(file)?;
     }
     Ok(())
 }
 
-pub fn logon_reconcile_command() -> Option<String> {
-    let text = std::fs::read_to_string(autostart_file()?).ok()?;
+pub fn logon_reconcile_command(app: &str) -> Option<String> {
+    let text = std::fs::read_to_string(autostart_file(app)?).ok()?;
     text.lines().find_map(|l| l.strip_prefix("Exec=")).map(str::to_owned)
 }
 

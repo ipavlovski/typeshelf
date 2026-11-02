@@ -7,6 +7,10 @@ import { Detail } from "./Detail";
 import { GoogleList } from "./GoogleList";
 import { ImportDialog } from "./ImportDialog";
 import { ShapeFilters, rangesToQuery, type Ranges } from "./ShapeFilters";
+import { Settings as SettingsWindow } from "./Settings";
+import { Updates } from "./Updates";
+import { useUpdates } from "./useUpdates";
+import { versionLabel } from "./versions";
 
 interface Progress {
   folder: string;
@@ -28,6 +32,8 @@ export function App() {
   const [showShape, setShowShape] = useState(false);
   const [ranges, setRanges] = useState<Ranges>({});
   const [libraryVersion, setLibraryVersion] = useState(0);
+  const [panel, setPanel] = useState<"settings" | "updates" | null>(null);
+  const { app, status } = useUpdates();
   const toastTimer = useRef<number>(undefined);
 
   const notify = useCallback((msg: string) => {
@@ -111,6 +117,8 @@ export function App() {
         onActivation={activation}
         onError={notify}
         onImport={() => setImporting(true)}
+        onSettings={() => setPanel("settings")}
+        updatePending={status.state === "ready"}
         dropTarget={(collectionId) => {
           const faces = selectedFaces();
           if (faces.length) api.collectionAdd(collectionId, faces, true).then(refreshLibrary);
@@ -211,6 +219,11 @@ export function App() {
             </span>
           ) : null}
           {library && !library.canActivate && <span className="warn">Activation is not available on this OS yet</span>}
+          {status.state === "ready" && (
+            <button className="link" onClick={() => api.installUpdate()}>
+              Update {versionLabel(status.version)} is ready: restart to install
+            </button>
+          )}
         </footer>
       </main>
       {detail && (
@@ -232,6 +245,21 @@ export function App() {
           }}
         />
       )}
+      {panel === "settings" && (
+        <SettingsWindow
+          app={app}
+          status={status}
+          settings={settings}
+          onSettings={updateSettings}
+          onUpdates={() => setPanel("updates")}
+          onImport={() => {
+            setPanel(null);
+            setImporting(true);
+          }}
+          onClose={() => setPanel(null)}
+        />
+      )}
+      {panel === "updates" && <Updates app={app} status={status} onClose={() => setPanel("settings")} />}
       {toast && (
         <div className="toast" onClick={() => setToast(null)}>
           {toast}

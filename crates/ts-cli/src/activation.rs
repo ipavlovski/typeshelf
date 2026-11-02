@@ -113,11 +113,15 @@ pub fn autostart(db: &Path, state: &str) -> Result<()> {
     match state {
         "on" => {
             let exe = std::env::current_exe()?;
-            os::enable_logon_reconcile(&exe, &format!("--db \"{}\" reconcile --logon", db.display()))?;
+            os::enable_logon_reconcile(
+                ts_activate::APP,
+                &exe,
+                &format!("--db \"{}\" reconcile --logon", db.display()),
+            )?;
         }
-        "off" => os::disable_logon_reconcile()?,
+        "off" => os::disable_logon_reconcile(ts_activate::APP)?,
         _ => {}
     }
-    println!("{}", os::logon_reconcile_command().unwrap_or_else(|| "off".into()));
+    println!("{}", os::logon_reconcile_command(ts_activate::APP).unwrap_or_else(|| "off".into()));
     Ok(())
 }

@@ -112,10 +112,31 @@ This needs `clang`, `lld`, `llvm` and `cargo-xwin`. To also build the NSIS insta
 locally (`pnpm tauri build --runner cargo-xwin --target x86_64-pc-windows-msvc`),
 install `libayatana-appindicator` and `nsis` as well.
 
-Releases: push a `v*` tag. `.github/workflows/release.yml` builds the Windows installer,
-the macOS universal `.dmg` and the Linux AppImage and `.deb`, plus CLI binaries and the
-UXP plugins, into a draft GitHub release. Signing and notarisation use optional secrets,
-listed at the top of the workflow.
+## Releases and updates
+
+The workflow matches the sibling apps (logcadence, logtracker). Work happens on `dev`; `main`
+only moves by releases. From `app/`:
+
+| Command | What it does |
+|---|---|
+| `pnpm preview` | Builds the working tree as **typeshelfDev** and (re)starts it on Windows, next to the installed typeshelf. It has its own data folder, plugin port, registry tag and logon task. |
+| `pnpm release:dev` | Tags dev's HEAD as a dev build `vX.Y.Z.N`, published as a GitHub pre-release. |
+| `pnpm release [minor\|patch\|major]` | Bumps `app/package.json`, fast-forwards `main`, and tags and pushes `vX.Y.Z`. |
+
+A pushed tag starts `.github/workflows/release.yml` on `windows-latest`. It checks the
+tag against `package.json`, writes release notes from the commits, runs the tests, and
+builds the signed NSIS installer plus `latest.json`. It publishes them, along with the CLI
+and the UXP plugins, as a GitHub release.
+
+The installed app checks GitHub's latest release 10 s after launch and then every 6 hours.
+It downloads the update in the background and installs it on quit, or straight away from
+**Settings → Restart to install**. Dev builds are pre-releases, so they are never picked
+up automatically: install them from **Settings → Updates and releases**, which lists every
+release with its notes.
+
+Updates are signed with `~/.tauri/typeshelf.key` (GitHub secret `TAURI_SIGNING_PRIVATE_KEY`).
+The public key is in `app/src-tauri/tauri.conf.json`. Keep a backup of the private key:
+without it, installed apps can no longer update.
 
 ## Known gaps
 
@@ -124,5 +145,5 @@ listed at the top of the workflow.
 - The UXP plugin is untested inside Photoshop and InDesign.
 - WOFF and WOFF2 files are listed but not indexed yet.
 - The glyph grid and the live OpenType preview do not work for `.ttc` collections yet.
-- No auto-updater yet. It needs a signing key pair (`pnpm tauri signer generate`) and an
-  update endpoint.
+- Releases are built for Windows only, like the sibling apps. The macOS and Linux
+  backends are covered by CI but are not packaged yet.

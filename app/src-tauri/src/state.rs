@@ -28,13 +28,13 @@ pub struct AppState {
 }
 
 pub fn data_dir() -> Result<PathBuf> {
-    let dirs = directories::ProjectDirs::from("", "", "typeshelf").context("no home directory")?;
+    let dirs = directories::ProjectDirs::from("", "", crate::channel::APP).context("no home directory")?;
     Ok(dirs.data_local_dir().to_owned())
 }
 
 impl AppState {
     pub fn open(data_dir: PathBuf) -> Result<AppState> {
-        Self::open_with(data_dir, ts_activate::platform())
+        Self::open_with(data_dir, ts_activate::platform_for(crate::channel::APP))
     }
 
     /// Opens with a given activation backend (tests use an in-memory one).

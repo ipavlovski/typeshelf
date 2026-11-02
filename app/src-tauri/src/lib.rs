@@ -1,9 +1,11 @@
 mod automation;
+mod channel;
 mod commands;
 mod platform;
 mod providers;
 mod state;
 mod thumbs;
+mod updater;
 mod watch;
 
 use tauri::menu::{Menu, MenuItem};
@@ -16,7 +18,7 @@ use state::AppState;
 /// fonts and exits without showing a window.
 fn reconcile_logon() -> anyhow::Result<()> {
     let mut store = ts_store::Store::open(&state::data_dir()?.join("library.db"))?;
-    if let Some(backend) = ts_activate::platform() {
+    if let Some(backend) = ts_activate::platform_for(channel::APP) {
         ts_activate::reconcile(&mut store, backend.as_ref(), true)?;
     }
     Ok(())
@@ -33,6 +35,8 @@ pub fn run() {
 
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_opener::init())
         .register_asynchronous_uri_scheme_protocol("thumb", thumbs::handle)
         .setup(|app| {
             let state = AppState::open(state::data_dir()?)?;
@@ -41,6 +45,7 @@ pub fn run() {
             platform::install_session_end_hook(app.handle().clone());
             watch::restart(app.handle());
             automation::start(app.handle().clone());
+            updater::init(app.handle());
             // Catch up with changes made while the app was closed (incremental: unchanged files are skipped).
             let handle = app.handle().clone();
             std::thread::spawn(move || {
@@ -57,7 +62,7 @@ pub fn run() {
             let menu = Menu::with_items(app, &[&show, &deactivate, &quit])?;
             TrayIconBuilder::new()
                 .icon(app.default_window_icon().cloned().expect("bundled icon"))
-                .tooltip("typeshelf")
+                .tooltip(if channel::IS_DEV { "typeshelfDev" } else { "typeshelf" })
                 .menu(&menu)
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| match event.id.as_ref() {
@@ -109,6 +114,12 @@ pub fn run() {
             providers::download_pending_fonts,
             providers::google_catalogue,
             providers::google_install,
+            updater::app_info,
+            updater::update_status,
+            updater::check_for_updates,
+            updater::install_release,
+            updater::install_update,
+            updater::list_releases,
         ])
         .build(tauri::generate_context!())
         .expect("error while building typeshelf");
@@ -119,6 +130,7 @@ pub fn run() {
             if let Some(state) = app.try_state::<AppState>() {
                 let _ = state.deactivate_session();
             }
+            updater::install_on_exit(app);
         }
     });
 }

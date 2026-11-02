@@ -1,7 +1,7 @@
 name: ci
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   pull_request:
 
 env:
@@ -30,7 +30,7 @@ jobs:
           version: 11
       - name: Build frontend (embedded by the app crate)
         working-directory: app
-        run: pnpm install --frozen-lockfile && pnpm typecheck && pnpm build
+        run: pnpm install --frozen-lockfile && pnpm typecheck && pnpm test && pnpm build
       - run: cargo fmt --all --check
         if: runner.os == 'Linux'
       - run: cargo clippy --workspace --all-targets -- -D warnings

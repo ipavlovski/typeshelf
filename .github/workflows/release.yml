@@ -1,105 +1,75 @@
-# Builds installers for every platform when a version tag (v*) is pushed and
-# attaches them to a draft GitHub release.
+# Builds the Windows installer for a pushed release tag and publishes it as a GitHub Release, which the installed
+# apps update from (src-tauri/src/updater.rs reads latest.json). Tags come from app/scripts/release.ts:
+# `pnpm release` pushes vX.Y.Z (a release: installed apps update to it on their own), `pnpm release:dev` pushes
+# vX.Y.Z.N (a dev build, published as a pre-release: only installed from the app's Updates window).
+# See app/src/versions.ts for the numbering.
 #
-# Optional secrets:
-#   TAURI_SIGNING_PRIVATE_KEY, TAURI_SIGNING_PRIVATE_KEY_PASSWORD  - updater signatures
-#   APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD, APPLE_SIGNING_IDENTITY,
-#   APPLE_ID, APPLE_PASSWORD, APPLE_TEAM_ID                        - macOS signing + notarisation
-name: release
+# Secrets: TAURI_SIGNING_PRIVATE_KEY (and _PASSWORD, empty here) sign the installer; the app only installs
+# updates signed with the key whose public half is in tauri.conf.json.
+name: Release
+
 on:
   push:
-    tags: ["v*"]
+    tags: ['v*']
+
+permissions:
+  contents: write
 
 jobs:
-  app:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: windows-latest
-            args: ""
-          - os: macos-latest
-            args: "--target universal-apple-darwin"
-          - os: ubuntu-22.04
-            args: ""
-    runs-on: ${{ matrix.os }}
-    permissions:
-      contents: write
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@v5
         with:
-          targets: ${{ matrix.os == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
-      - uses: Swatinem/rust-cache@v2
-      - name: Linux packages
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+          fetch-depth: 0 # tags and history, for the release notes
       - uses: pnpm/action-setup@v4
         with:
           version: 11
-      - run: pnpm install --frozen-lockfile
-        working-directory: app
-      - uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      - uses: actions/setup-node@v5
         with:
-          projectPath: app
-          tagName: ${{ github.ref_name }}
-          releaseName: typeshelf ${{ github.ref_name }}
-          releaseDraft: true
-          args: ${{ matrix.args }}
-
-  cli:
-    strategy:
-      matrix:
-        include:
-          - os: windows-latest
-            bin: typeshelf.exe
-          - os: macos-latest
-            bin: typeshelf
-          - os: ubuntu-22.04
-            bin: typeshelf
-    runs-on: ${{ matrix.os }}
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: app/pnpm-lock.yaml
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: cargo build --release -p ts-cli
-      - name: Attach to the release
-        shell: bash
+
+      - run: pnpm install --frozen-lockfile
+        working-directory: app
+      # Fails unless the tag matches app/package.json (vX.Y.Z, or vX.(Y+1).0.N for a dev build).
+      - name: Version and release notes
+        id: meta
+        working-directory: app
+        run: pnpm exec tsx scripts/release-notes.ts "$GITHUB_REF_NAME" ../notes.md >> "$GITHUB_OUTPUT"
+      - run: pnpm typecheck && pnpm test
+        working-directory: app
+      - run: cargo test --workspace
+
+      # The app's version comes from the tag: a dev build v0.2.0.3 is 0.2.0-dev.3 (semver, as the updater needs).
+      - name: Build the signed installer
+        working-directory: app
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: pnpm tauri build --config '{"version":"${{ steps.meta.outputs.version }}"}'
+      - name: Updater manifest
+        working-directory: app
+        run: pnpm exec tsx scripts/latest-json.ts "$GITHUB_REF_NAME" "${{ steps.meta.outputs.version }}" ../notes.md ../target/release/bundle/nsis ../latest.json
+
+      - name: CLI and Adobe plugins
+        run: |
+          cargo build --release -p ts-cli
+          cp target/release/typeshelf.exe typeshelf-cli.exe
+          (cd plugins/adobe-uxp && node build.mjs && cd dist && 7z a ../../../typeshelf-uxp-photoshop.zip photoshop && 7z a ../../../typeshelf-uxp-indesign.zip indesign)
+
+      # Published here rather than by tauri-action, so the release is titled and noted like the sibling apps'.
+      - name: Publish the release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          name="typeshelf-cli-${{ runner.os }}-${{ runner.arch }}"
-          cp "target/release/${{ matrix.bin }}" "$name${{ runner.os == 'Windows' && '.exe' || '' }}"
-          for i in 1 2 3 4 5 6; do
-            gh release upload "${{ github.ref_name }}" "$name"* --clobber && break
-            sleep 30  # the app job creates the draft release
-          done
-  plugin:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-      - name: Build and zip the Adobe UXP plugins
-        working-directory: plugins/adobe-uxp
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          node build.mjs
-          (cd dist && zip -r ../typeshelf-uxp-photoshop.zip photoshop && zip -r ../typeshelf-uxp-indesign.zip indesign)
-          for i in 1 2 3 4 5 6; do
-            gh release upload "${{ github.ref_name }}" typeshelf-uxp-*.zip --clobber && break
-            sleep 30
-          done
+        run: >
+          gh release create "$GITHUB_REF_NAME" --title "${{ steps.meta.outputs.title }}" --notes-file notes.md
+          ${{ steps.meta.outputs.prerelease == 'true' && '--prerelease' || '--latest' }}
+          target/release/bundle/nsis/*-setup.exe target/release/bundle/nsis/*-setup.exe.sig latest.json
+          typeshelf-cli.exe typeshelf-uxp-photoshop.zip typeshelf-uxp-indesign.zip

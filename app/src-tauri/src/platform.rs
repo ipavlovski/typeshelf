@@ -29,12 +29,12 @@ pub fn install_session_end_hook(_app: tauri::AppHandle) {}
 
 #[cfg(target_os = "macos")]
 pub fn enable_logon_reconcile() -> Result<()> {
-    ts_activate::macos::enable_logon_reconcile(&std::env::current_exe()?, "--reconcile-logon")
+    ts_activate::macos::enable_logon_reconcile(crate::channel::APP, &std::env::current_exe()?, "--reconcile-logon")
 }
 
 #[cfg(all(unix, not(target_os = "macos")))]
 pub fn enable_logon_reconcile() -> Result<()> {
-    ts_activate::linux::enable_logon_reconcile(&std::env::current_exe()?, "--reconcile-logon")
+    ts_activate::linux::enable_logon_reconcile(crate::channel::APP, &std::env::current_exe()?, "--reconcile-logon")
 }
 
 #[cfg(target_os = "macos")]
@@ -101,7 +101,7 @@ mod windows {
 
     pub fn enable_logon_reconcile() -> Result<()> {
         let exe = std::env::current_exe()?;
-        ts_activate::windows::enable_logon_reconcile(&exe, "--reconcile-logon")
+        ts_activate::windows::enable_logon_reconcile(crate::channel::APP, &exe, "--reconcile-logon")
     }
 
     static APP: OnceLock<AppHandle> = OnceLock::new();

@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "typeshelf",
-  "version": "0.1.0",
+  "version": "../package.json",
   "identifier": "app.typeshelf",
   "build": {
     "frontendDist": "../dist",
@@ -27,11 +27,7 @@
   "bundle": {
     "active": true,
     "targets": [
-      "nsis",
-      "dmg",
-      "app",
-      "appimage",
-      "deb"
+      "nsis"
     ],
     "icon": [
       "icons/32x32.png",
@@ -44,11 +40,21 @@
     "publisher": "typeshelf",
     "category": "Utility",
     "copyright": "MIT License",
-    "linux": {
-      "deb": {
-        "depends": [
-          "fontconfig"
-        ]
+    "createUpdaterArtifacts": true,
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDFEMzREOTc2NkE4RTM3MUEKUldRYU40NXFkdGswSGYwNWh6WHdRWE42QW00dmF4UWY5cVRwc05kT1RjenFZTmpuS0VDdzRhUHkK",
+      "endpoints": [
+        "https://github.com/ipavlovski/typeshelf/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
       }
     }
   }

@@ -12,6 +12,9 @@ interface Props {
   onError: (msg: string) => void;
   dropTarget: (collectionId: number) => void;
   onImport: () => void;
+  onSettings: () => void;
+  /** A downloaded update is waiting: shown as a dot on the settings button. */
+  updatePending: boolean;
 }
 
 function Item({
@@ -56,7 +59,7 @@ function InlineInput({ initial, onDone }: { initial: string; onDone: (v: string 
   );
 }
 
-export function Sidebar({ library, scope, onScope, onChanged, onActivation, onError, dropTarget, onImport }: Props) {
+export function Sidebar({ library, scope, onScope, onChanged, onActivation, onError, dropTarget, onImport, onSettings, updatePending }: Props) {
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
   const [editing, setEditing] = useState<{ id: number | null; parent: number | null; name: string } | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; c: Collection } | null>(null);
@@ -135,7 +138,12 @@ export function Sidebar({ library, scope, onScope, onChanged, onActivation, onEr
 
   return (
     <aside className="sidebar" onClick={() => setMenu(null)}>
-      <div className="brand">typeshelf</div>
+      <div className="brand">
+        typeshelf
+        <button className="ghost settings-button" onClick={onSettings} title="Settings">
+          ⚙{updatePending && <i className="new-dot" />}
+        </button>
+      </div>
       <section>
         <h3>Library</h3>
         <Item active={is("all")} label="All fonts" count={library?.all} onClick={() => onScope({ kind: "all" })} />

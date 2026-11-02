@@ -126,6 +126,32 @@ export interface Histogram {
   bins: number[];
 }
 
+export interface AppInfo {
+  version: string;
+  channel: "release" | "dev";
+  /** typeshelfDev's preview label (0.2.0.3-preview); empty for releases. */
+  label: string;
+  /** Whether this build updates itself (the installed release). */
+  updates: boolean;
+}
+
+export type UpdateStatus =
+  | { state: "none" }
+  | { state: "checking" }
+  | { state: "downloading"; version: string; percent: number }
+  | { state: "ready"; version: string }
+  | { state: "error"; message: string };
+
+export interface Release {
+  tag: string;
+  version: string;
+  dev: boolean;
+  title: string;
+  notes: string;
+  publishedAt: string;
+  url: string;
+}
+
 export const DEFAULT_SAMPLE = "The quick brown fox jumps over the lazy dog";
 export const DEFAULT_SETTINGS: Settings = { sample: DEFAULT_SAMPLE, size: 42 };
 
@@ -153,6 +179,12 @@ export const api = {
   fontbaseImport: (download: boolean, activate: "none" | "session" | "pinned") =>
     invoke<ImportResult>("fontbase_import", { options: { download, activate } }),
   downloadPending: () => invoke<number>("download_pending_fonts"),
+  appInfo: () => invoke<AppInfo>("app_info"),
+  updateStatus: () => invoke<UpdateStatus>("update_status"),
+  checkForUpdates: () => invoke<string | null>("check_for_updates"),
+  installRelease: (tag: string) => invoke<string | null>("install_release", { tag }),
+  installUpdate: () => invoke<void>("install_update"),
+  listReleases: () => invoke<Release[]>("list_releases"),
   metricHistograms: () => invoke<Histogram[]>("metric_histograms"),
   googleCatalogue: () => invoke<GoogleFamily[]>("google_catalogue"),
   googleInstall: (family: string) => invoke<FaceId[]>("google_install", { family }),

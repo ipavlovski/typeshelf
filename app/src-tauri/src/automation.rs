@@ -1,7 +1,7 @@
 //! Local WebSocket endpoint for design-app plugins (Adobe UXP): a plugin sends the
 //! PostScript names a document needs, typeshelf activates them as session fonts.
 //!
-//! Bound to 127.0.0.1 only, on a fixed port because UXP manifests must declare it.
+//! Bound to 127.0.0.1 only, on a fixed port (src/channel.rs) because UXP manifests must declare it.
 //! It can only activate fonts already in the library.
 //!
 //! ```json
@@ -21,12 +21,12 @@ use tungstenite::Message;
 
 use crate::state::AppState;
 
-pub const PORT: u16 = 47215;
-
 #[derive(Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 enum Request {
     Ping,
+    /// typeshelfDev only: `pnpm preview` quits the running preview cleanly before replacing it.
+    Quit,
     #[serde(rename_all = "camelCase")]
     Activate {
         postscript_names: Vec<String>,
@@ -36,10 +36,10 @@ enum Request {
 }
 
 pub fn start(app: AppHandle) {
-    let listener = match TcpListener::bind(("127.0.0.1", PORT)) {
+    let listener = match TcpListener::bind(("127.0.0.1", crate::channel::PORT)) {
         Ok(l) => l,
         Err(e) => {
-            eprintln!("automation endpoint unavailable on port {PORT}: {e}");
+            eprintln!("automation endpoint unavailable on port {}: {e}", crate::channel::PORT);
             return;
         }
     };
@@ -55,6 +55,13 @@ fn serve(app: &AppHandle, stream: TcpStream) {
     let Ok(mut ws) = tungstenite::accept(stream) else { return };
     while let Ok(msg) = ws.read() {
         let reply = match msg {
+            Message::Text(text)
+                if crate::channel::IS_DEV && matches!(serde_json::from_str(&text), Ok(Request::Quit)) =>
+            {
+                let _ = ws.send(Message::text(json!({ "type": "bye" }).to_string()));
+                app.exit(0);
+                break;
+            }
             Message::Text(text) => handle(&app.state::<AppState>(), &text),
             Message::Close(_) => break,
             _ => continue,
@@ -74,7 +81,8 @@ pub fn handle(state: &AppState, text: &str) -> Value {
         Err(e) => return json!({ "type": "error", "message": e.to_string() }),
     };
     match request {
-        Request::Ping => json!({ "type": "pong", "app": "typeshelf", "version": env!("CARGO_PKG_VERSION") }),
+        Request::Ping => json!({ "type": "pong", "app": crate::channel::APP, "version": env!("CARGO_PKG_VERSION") }),
+        Request::Quit => json!({ "type": "error", "message": "quit is only accepted by typeshelfDev" }),
         Request::Activate { postscript_names, pin } => {
             let wanted: HashSet<&str> = postscript_names.iter().map(String::as_str).collect();
             // Documents use system fonts too; a library copy of Arial must not shadow Windows' own.

@@ -115,6 +115,9 @@ input:focus {
 }
 
 .brand {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   font-weight: 650;
   font-size: 15px;
   letter-spacing: 0.02em;
@@ -749,4 +752,132 @@ input:focus {
 
 .dual input::-webkit-slider-thumb {
   margin-top: -5px;
+}
+
+/* Settings and updates */
+.settings-button {
+  position: relative;
+  font-size: 16px;
+  padding: 0 6px;
+  color: var(--muted);
+}
+
+.new-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-left: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  vertical-align: middle;
+}
+
+.settings-button .new-dot {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  margin: 0;
+}
+
+.dialog-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.settings section {
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+
+.settings h3 {
+  margin: 0 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.row-setting {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 34px;
+}
+
+.row-setting > span:first-child {
+  flex: 1;
+}
+
+.row-setting input:not([type="range"]) {
+  flex: 2;
+}
+
+.row-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.install-action {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 0 16px;
+}
+
+.note {
+  color: var(--muted);
+  margin: 10px 0 16px;
+}
+
+.updates .detail-body {
+  grid-template-columns: 240px 1fr;
+}
+
+.release-item {
+  justify-content: space-between;
+}
+
+.chip {
+  font-style: normal;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border: 1px solid var(--muted);
+  color: var(--muted);
+  border-radius: 4px;
+  padding: 0 4px;
+  margin-left: 6px;
+}
+
+.chip.installed {
+  border-color: var(--on);
+  color: var(--on);
+}
+
+.notes {
+  user-select: text;
+  line-height: 1.5;
+}
+
+.notes h3 {
+  font-size: 14px;
+  margin: 16px 0 6px;
+}
+
+.notes ul {
+  padding-left: 20px;
+  margin: 4px 0;
+}
+
+button.link {
+  border: none;
+  background: none;
+  color: var(--accent);
+  padding: 0;
+}
+
+a {
+  color: var(--accent);
 }
