@@ -35,6 +35,12 @@ impl LoadedFont {
         text.chars().all(|c| c.is_whitespace() || cmap.map(c).is_some())
     }
 
+    /// Every code point the face maps, ascending.
+    pub fn codepoints(&self) -> Vec<u32> {
+        let Ok(font) = self.font_ref() else { return Vec::new() };
+        font.charmap().mappings().map(|(cp, _)| cp).collect()
+    }
+
     /// Text the face can draw: `preferred` if covered, otherwise a fallback sample.
     pub fn drawable_text(&self, preferred: &str) -> String {
         let Ok(font) = self.font_ref() else { return preferred.to_owned() };

@@ -21,7 +21,7 @@ pub use memory::MemoryBackend;
 
 /// The OS side of activation. Implementations must be idempotent: registering an
 /// already registered font, or unregistering a missing one, succeeds.
-pub trait Backend {
+pub trait Backend: Send + Sync {
     /// Key under which the OS knows this file (e.g. a registry value name).
     /// Must be unique per file and recognisable by [`Backend::owned`].
     fn os_key(&self, name: &str, hash: FileHash) -> String;

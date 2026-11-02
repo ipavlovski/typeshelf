@@ -1,0 +1,39 @@
+[package]
+name = "typeshelf-app"
+description = "typeshelf desktop app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "typeshelf_app"
+crate-type = ["rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+ts-model.workspace = true
+ts-store.workspace = true
+ts-index.workspace = true
+ts-activate.workspace = true
+ts-search.workspace = true
+ts-render.workspace = true
+anyhow.workspace = true
+directories.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-dialog = "2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_System_Diagnostics_ToolHelp",
+    "Win32_System_LibraryLoader",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[features]
+# Embeds the built frontend instead of loading the dev server; the tauri CLI enables it for `tauri build`.
+custom-protocol = ["tauri/custom-protocol"]

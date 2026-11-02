@@ -32,7 +32,7 @@ impl Env {
     }
 
     fn os_count(&self) -> usize {
-        self.backend.entries.borrow().len()
+        self.backend.entries.lock().unwrap().len()
     }
 }
 
@@ -43,7 +43,7 @@ fn activates_a_batch_with_one_notification() {
     let out = activate(&mut env.store, &env.backend, &reqs, Session).unwrap();
     assert_eq!(out.changed.len(), 300);
     assert_eq!(env.os_count(), 300);
-    assert_eq!(env.backend.notifications.get(), 1);
+    assert_eq!(env.backend.notifications.load(std::sync::atomic::Ordering::Relaxed), 1);
     assert!(env.store.activations().unwrap().iter().all(|a| a.state == JournalState::Active));
 }
 
@@ -54,7 +54,11 @@ fn holders_are_counted() {
     activate(&mut env.store, &env.backend, std::slice::from_ref(&r), Session).unwrap();
     let out = activate(&mut env.store, &env.backend, std::slice::from_ref(&r), Session).unwrap();
     assert_eq!(out.held, [r.hash]);
-    assert_eq!(env.backend.notifications.get(), 1, "second holder changes nothing in the OS");
+    assert_eq!(
+        env.backend.notifications.load(std::sync::atomic::Ordering::Relaxed),
+        1,
+        "second holder changes nothing in the OS"
+    );
 
     deactivate(&mut env.store, &env.backend, &[r.hash], false).unwrap();
     assert_eq!(env.os_count(), 1, "one holder left");
@@ -79,7 +83,7 @@ fn failed_registration_is_rolled_back() {
     let mut env = Env::new();
     let ok = env.req(1);
     let bad = env.req(2);
-    env.backend.fail.borrow_mut().insert(bad.path.clone());
+    env.backend.fail.lock().unwrap().insert(bad.path.clone());
     let out = activate(&mut env.store, &env.backend, &[ok.clone(), bad.clone()], Session).unwrap();
     assert_eq!(out.changed, [ok.hash]);
     assert_eq!(out.failed.len(), 1);
@@ -145,7 +149,7 @@ fn crash_mid_deactivation_is_finished() {
 #[test]
 fn orphans_are_removed() {
     let mut env = Env::new();
-    env.backend.entries.borrow_mut().insert("Lost [typeshelf 00]".into(), ("/gone.ttf".into(), Session));
+    env.backend.entries.lock().unwrap().insert("Lost [typeshelf 00]".into(), ("/gone.ttf".into(), Session));
     let rep = reconcile(&mut env.store, &env.backend, false).unwrap();
     assert_eq!(rep.orphans, 1);
     assert_eq!(env.os_count(), 0);
@@ -173,7 +177,7 @@ fn moved_files_are_repointed() {
 
     let rep = reconcile(&mut env.store, &env.backend, false).unwrap();
     assert_eq!(rep.repaired, 1);
-    let entries = env.backend.entries.borrow();
+    let entries = env.backend.entries.lock().unwrap();
     assert_eq!(entries.values().next().unwrap().0, new.to_string_lossy());
 }
 
@@ -192,7 +196,7 @@ fn missing_files_are_dropped() {
 fn flags_system_duplicates() {
     let mut env = Env::new();
     let r = env.req(1);
-    env.backend.system.borrow_mut().insert("font 1".into());
+    env.backend.system.lock().unwrap().insert("font 1".into());
     let out = activate(&mut env.store, &env.backend, std::slice::from_ref(&r), Session).unwrap();
     assert_eq!(out.shadowed, [r.hash]);
 }
