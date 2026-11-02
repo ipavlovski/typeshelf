@@ -1,0 +1,209 @@
+mod activation;
+
+use std::io::Write;
+use std::path::{Path, PathBuf};
+use std::time::Duration;
+
+use anyhow::{Context, Result, bail};
+use clap::{Parser, Subcommand};
+use ts_store::{Folder, FolderKind, Store};
+
+#[derive(Parser)]
+#[command(name = "typeshelf", version, about = "Fast font library: index, preview and activate fonts")]
+struct Cli {
+    /// Library database (default: the per-user data directory).
+    #[arg(long, global = true, env = "TYPESHELF_DB")]
+    db: Option<PathBuf>,
+    #[command(subcommand)]
+    command: Command,
+}
+
+#[derive(Subcommand)]
+enum Command {
+    /// Index folders. Paths given here are registered as watched folders first;
+    /// with no paths, every registered folder is re-indexed.
+    Index {
+        paths: Vec<PathBuf>,
+        /// Register the paths as the managed Root folder instead.
+        #[arg(long)]
+        root: bool,
+    },
+    /// List registered folders.
+    Folders,
+    /// Unregister a folder and drop its fonts from the index (files are untouched).
+    RemoveFolder { path: PathBuf },
+    /// Library statistics.
+    Stats,
+    /// Files with identical content.
+    Dupes,
+    /// Files that could not be indexed.
+    Errors,
+    /// Keep the index up to date while folders change.
+    Watch,
+    /// Activate fonts matching a family, full name or PostScript name.
+    Activate {
+        query: String,
+        /// Keep active across reboots instead of for this session only.
+        #[arg(long)]
+        pin: bool,
+    },
+    /// Release fonts matching a query (removed once no collection holds them).
+    Deactivate {
+        /// Omit with --all-session.
+        query: Option<String>,
+        /// Remove even if other holders remain.
+        #[arg(long)]
+        force: bool,
+        /// Deactivate every session font.
+        #[arg(long, conflicts_with = "query")]
+        all_session: bool,
+    },
+    /// Keep active fonts across reboots.
+    Pin { query: String },
+    /// Make pinned fonts session-only again.
+    Unpin { query: String },
+    /// List active fonts.
+    Active,
+    /// Repair activation state after a crash; with --logon, also clear the last session's fonts.
+    Reconcile {
+        #[arg(long)]
+        logon: bool,
+    },
+    /// Run `reconcile --logon` at every logon (on) or stop doing so (off).
+    Autostart {
+        #[arg(value_parser = ["on", "off", "status"])]
+        state: String,
+    },
+}
+
+fn main() -> Result<()> {
+    let cli = Cli::parse();
+    let db = match cli.db {
+        Some(p) => p,
+        None => default_db()?,
+    };
+    let mut store = Store::open(&db)?;
+    match cli.command {
+        Command::Activate { query, pin } => activation::activate(&mut store, &query, pin)?,
+        Command::Deactivate { query, force, all_session } => {
+            activation::deactivate(&mut store, query.as_deref(), force, all_session)?
+        }
+        Command::Pin { query } => activation::set_mode(&mut store, &query, ts_model::ActivationMode::Pinned)?,
+        Command::Unpin { query } => activation::set_mode(&mut store, &query, ts_model::ActivationMode::Session)?,
+        Command::Active => activation::list(&store)?,
+        Command::Reconcile { logon } => activation::reconcile(&mut store, logon)?,
+        Command::Autostart { state } => activation::autostart(&db, &state)?,
+        Command::Index { paths, root } => {
+            let kind = if root { FolderKind::Root } else { FolderKind::Watched };
+            let folders = if paths.is_empty() {
+                store.folders()?
+            } else {
+                paths.iter().map(|p| register(&store, p, kind)).collect::<Result<_>>()?
+            };
+            if folders.is_empty() {
+                bail!("no folders registered; run `typeshelf index <dir>`");
+            }
+            for folder in &folders {
+                index(&mut store, folder)?;
+            }
+        }
+        Command::Folders => {
+            for f in store.folders()? {
+                println!("{:<8} {}", format!("{:?}", f.kind).to_lowercase(), f.path);
+            }
+        }
+        Command::RemoveFolder { path } => {
+            let path = absolute(&path)?;
+            if !store.remove_folder(&path)? {
+                bail!("{path} is not a registered folder");
+            }
+        }
+        Command::Stats => print_stats(&store)?,
+        Command::Dupes => {
+            for (hash, paths) in store.duplicates()? {
+                println!("{hash}");
+                for p in paths {
+                    println!("  {p}");
+                }
+            }
+        }
+        Command::Errors => {
+            for (path, status, error) in store.errors()? {
+                println!("{status:<12} {path}: {error}");
+            }
+        }
+        Command::Watch => {
+            let folders = store.folders()?;
+            let roots: Vec<PathBuf> = folders.iter().map(|f| PathBuf::from(&f.path)).collect();
+            eprintln!("watching {} folders, Ctrl+C to stop", roots.len());
+            ts_index::watch(&roots, Duration::from_millis(500), |changed| {
+                for folder in folders.iter().filter(|f| changed.iter().any(|p| p.starts_with(&f.path))) {
+                    if let Err(e) = index(&mut store, folder) {
+                        eprintln!("{}: {e:#}", folder.path);
+                    }
+                }
+            })?;
+        }
+    }
+    Ok(())
+}
+
+fn default_db() -> Result<PathBuf> {
+    let dirs = directories::ProjectDirs::from("", "", "typeshelf").context("no home directory")?;
+    Ok(dirs.data_local_dir().join("library.db"))
+}
+
+fn absolute(path: &Path) -> Result<String> {
+    let p = std::path::absolute(path).with_context(|| format!("resolving {}", path.display()))?;
+    Ok(p.to_string_lossy().trim_end_matches(['/', '\\']).to_owned())
+}
+
+fn register(store: &Store, path: &Path, kind: FolderKind) -> Result<Folder> {
+    if !path.is_dir() {
+        bail!("{} is not a directory", path.display());
+    }
+    let path = absolute(path)?;
+    let id = store.add_folder(&path, kind)?;
+    Ok(Folder { id, path, kind })
+}
+
+fn index(store: &mut Store, folder: &Folder) -> Result<()> {
+    eprintln!("indexing {}", folder.path);
+    let report = ts_index::index_folder(store, folder, &|done, total| {
+        if done == total || done % 250 == 0 {
+            eprint!("\r  {done}/{total}");
+            let _ = std::io::stderr().flush();
+        }
+    })?;
+    if report.indexed > 0 {
+        eprintln!();
+    }
+    eprintln!(
+        "  {} files: {} indexed, {} unchanged, {} removed, {} unsupported, {} failed in {:.2?}",
+        report.scanned,
+        report.indexed,
+        report.unchanged,
+        report.removed,
+        report.unsupported,
+        report.failed,
+        report.elapsed
+    );
+    Ok(())
+}
+
+fn print_stats(store: &Store) -> Result<()> {
+    let s = store.stats()?;
+    println!("folders            {}", s.folders);
+    println!("files              {}", s.files);
+    println!("faces              {}", s.faces);
+    println!("families           {}", s.families);
+    println!("variable faces     {}", s.variable_faces);
+    println!("renamed families   {}", s.renamed_families);
+    println!("duplicate files    {}", s.duplicate_files);
+    println!("unsupported files  {}", s.unsupported);
+    println!("unreadable files   {}", s.errors);
+    for (format, n) in s.by_format {
+        println!("  {format:<6} {n}");
+    }
+    Ok(())
+}

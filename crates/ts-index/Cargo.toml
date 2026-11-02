@@ -1,0 +1,20 @@
+[package]
+name = "ts-index"
+description = "Font discovery, hashing and metadata extraction for typeshelf"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+ts-model.workspace = true
+ts-store.workspace = true
+anyhow.workspace = true
+notify.workspace = true
+rayon.workspace = true
+read-fonts.workspace = true
+skrifa.workspace = true
+walkdir.workspace = true
+xxhash-rust.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

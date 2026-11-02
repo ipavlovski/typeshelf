@@ -1,0 +1,19 @@
+[package]
+name = "ts-cli"
+description = "Command-line interface for typeshelf"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "typeshelf"
+path = "src/main.rs"
+
+[dependencies]
+ts-model.workspace = true
+ts-store.workspace = true
+ts-index.workspace = true
+ts-activate.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+directories.workspace = true

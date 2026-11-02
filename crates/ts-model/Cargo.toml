@@ -1,0 +1,8 @@
+[package]
+name = "ts-model"
+description = "Shared types for typeshelf"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
