@@ -1,3 +1,4 @@
+mod automation;
 mod commands;
 mod platform;
 mod providers;
@@ -39,6 +40,7 @@ pub fn run() {
             let _ = platform::enable_logon_reconcile();
             platform::install_session_end_hook(app.handle().clone());
             watch::restart(app.handle());
+            automation::start(app.handle().clone());
             // Catch up with changes made while the app was closed (incremental: unchanged files are skipped).
             let handle = app.handle().clone();
             std::thread::spawn(move || {
