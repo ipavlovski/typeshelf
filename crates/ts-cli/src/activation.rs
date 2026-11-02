@@ -102,22 +102,22 @@ pub fn reconcile(store: &mut Store, logon: bool) -> Result<()> {
     Ok(())
 }
 
+#[cfg(all(unix, not(target_os = "macos")))]
+use ts_activate::linux as os;
+#[cfg(target_os = "macos")]
+use ts_activate::macos as os;
 #[cfg(windows)]
+use ts_activate::windows as os;
+
 pub fn autostart(db: &Path, state: &str) -> Result<()> {
-    use ts_activate::windows as win;
     match state {
         "on" => {
             let exe = std::env::current_exe()?;
-            win::enable_logon_reconcile(&exe, &format!("--db \"{}\" reconcile --logon", db.display()))?;
+            os::enable_logon_reconcile(&exe, &format!("--db \"{}\" reconcile --logon", db.display()))?;
         }
-        "off" => win::disable_logon_reconcile()?,
+        "off" => os::disable_logon_reconcile()?,
         _ => {}
     }
-    println!("{}", win::logon_reconcile_command().unwrap_or_else(|| "off".into()));
+    println!("{}", os::logon_reconcile_command().unwrap_or_else(|| "off".into()));
     Ok(())
-}
-
-#[cfg(not(windows))]
-pub fn autostart(_db: &Path, _state: &str) -> Result<()> {
-    bail!("logon reconcile is not supported on this OS yet")
 }

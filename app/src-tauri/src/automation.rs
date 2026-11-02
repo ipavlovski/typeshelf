@@ -124,7 +124,9 @@ mod tests {
     fn state() -> (tempfile::TempDir, AppState) {
         let dir = tempfile::tempdir().unwrap();
         let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures");
-        let state = AppState::open(dir.path().to_owned()).unwrap();
+        // Never touch the real OS font registration from tests.
+        let backend: Box<dyn ts_activate::Backend> = Box::new(ts_activate::MemoryBackend::default());
+        let state = AppState::open_with(dir.path().to_owned(), Some(backend)).unwrap();
         let folder = state.add_folder(&fixtures.canonicalize().unwrap(), false).unwrap();
         state.index_folder(&folder, &|_, _| {}).unwrap();
         (dir, state)
@@ -149,12 +151,9 @@ mod tests {
     fn activates_known_fonts() {
         let (_dir, s) = state();
         let r = handle(&s, r#"{"type":"activate","postscriptNames":["FixtureSans-Light","Nope"]}"#);
-        if s.backend.is_some() {
-            assert_eq!(r["activated"], 1);
-        } else {
-            // No activation backend on this OS: the font is found but cannot be activated.
-            assert_eq!(r["type"], "error");
-        }
+        assert_eq!(r["activated"], 1);
         assert_eq!(r["missing"], json!(["Nope"]));
+        let again = handle(&s, r#"{"type":"activate","postscriptNames":["FixtureSans-Light"]}"#);
+        assert_eq!((again["activated"].as_u64(), again["alreadyActive"].as_u64()), (Some(0), Some(1)));
     }
 }

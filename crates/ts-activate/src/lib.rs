@@ -6,6 +6,10 @@
 //! fonts after a logoff or crash, re-points fonts whose file moved, and removes registry entries we own that the
 //! journal no longer knows about.
 
+#[cfg(all(unix, not(target_os = "macos")))]
+pub mod linux;
+#[cfg(target_os = "macos")]
+pub mod macos;
 mod memory;
 #[cfg(windows)]
 pub mod windows;
@@ -40,7 +44,11 @@ pub trait Backend: Send + Sync {
 pub fn platform() -> Option<Box<dyn Backend>> {
     #[cfg(windows)]
     return Some(Box::new(windows::WindowsBackend::default()));
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    return Some(Box::new(macos::MacBackend));
+    #[cfg(all(unix, not(target_os = "macos")))]
+    return linux::LinuxBackend::default_location().map(|b| Box::new(b) as Box<dyn Backend>);
+    #[allow(unreachable_code)]
     None
 }
 

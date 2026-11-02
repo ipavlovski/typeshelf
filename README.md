@@ -1,57 +1,128 @@
 # typeshelf
 
-A fast, free font manager: index a large font library, preview fonts without
-installing them, and activate them per session or pinned. Windows first, then
-macOS and Linux. MIT licensed.
+A fast, free font manager. It indexes a large font library, previews fonts without
+installing them, and activates them for the current session or permanently ("pinned").
+It runs on Windows first, with macOS and Linux support. MIT licensed.
 
 > `typeshelf` is a working name.
+
+## What it does
+
+- **Library**: a managed Root folder plus watched folders. Files are indexed in place,
+  duplicates are detected by content hash, and folders are re-indexed incrementally when
+  their files change.
+- **Previews**: one line per family, rendered in Rust (harfrust shaping, skrifa outlines)
+  and cached as WebP. The sample text is always one the font can draw: caps-only, Cyrillic
+  and symbol fonts never show tofu boxes.
+- **Search**: fuzzy names with typo tolerance, plus filters: `script:cyrillic feat:ss01
+  wght:>600 col:"2. SANS SERIF" is:active -is:italic folder:archive`.
+- **Shape filters ("SuperSearch")**: x-height, stem weight, width and contrast are
+  measured from the glyph outlines. They work as range sliders, or in queries as
+  `contrast:0.5..1`.
+- **Activation**: crash-safe. Every change is journaled first, and a reconcile step at
+  launch and at logon repairs whatever a crash or power cut left behind. Session fonts
+  disappear at logoff; pinned fonts survive reboots.
+- **Collections**: nested, activate a whole branch with one click, favourites.
+- **Detail page**: waterfall, OpenType feature toggles, variable-axis sliders and a glyph
+  grid you can copy from.
+- **FontBase import**: brings over the Root folder, nested collections, favourites,
+  active fonts and sample texts. Collection members FontBase never downloaded (Google
+  Fonts) are fetched and added.
+- **Google Fonts**: browse the catalogue with previews before downloading, then add a
+  family (or add and activate it) in one click.
+- **Adobe auto-activation**: a UXP panel for Photoshop and InDesign activates the fonts an
+  opened document needs (`plugins/adobe-uxp`).
 
 ## Layout
 
 | Path | What |
 |---|---|
-| `crates/ts-model` | Shared types (`FaceKey`, `FaceInfo`, Unicode block coverage) |
-| `crates/ts-store` | SQLite schema, migrations and queries |
-| `crates/ts-index` | Folder walking, hashing, font parsing, name cleanup, sample text, watcher |
-| `crates/ts-activate` | Crash-safe activation: journal, reconcile, per-OS backends (Windows so far) |
+| `crates/ts-model` | Shared types (`FaceKey`, `FaceInfo`, `Metrics`, Unicode block coverage) |
+| `crates/ts-store` | SQLite schema and migrations, activation journal, collections, pending members |
+| `crates/ts-index` | Folder walking, hashing, parsing, name cleanup, sample text, shape metrics, watcher |
+| `crates/ts-search` | In-memory snapshot: fuzzy matching, roaring-bitmap facets, range columns |
+| `crates/ts-render` | Shaping and rasterising, thumbnail cache, render pool |
+| `crates/ts-activate` | Journal and reconcile; backends for Windows (registry), macOS (CoreText) and Linux (fontconfig) |
+| `crates/ts-import-fontbase` | LevelDB and V8 decoders for FontBase's IndexedDB; import plan |
+| `crates/ts-providers` | Google Fonts catalogue, downloads, preview subsets |
 | `crates/ts-cli` | `typeshelf` command-line tool |
+| `app/` | Tauri 2 desktop app (Rust backend in `src-tauri`, React UI in `src`) |
+| `plugins/adobe-uxp` | Photoshop and InDesign plugin |
 | `fixtures/` | Tiny generated test fonts (`python3 tools/make_fixtures.py fixtures`) |
+
+## Measured on a 13,378-face library (Windows, mid-range laptop)
+
+| Interaction | Budget | Measured |
+|---|---|---|
+| First index of 13,816 files | < 2 min | 0.7 s (about 1 s with shape metrics) |
+| Re-index, nothing changed | n/a | 0.15 s |
+| Search per keystroke | < 16 ms | 0.1 to 3 ms |
+| Scroll the full list | 60 fps | 60 fps, no frame over 20 ms |
+| Activate 300 fonts | < 300 ms | 34 to 40 ms |
+| Deactivate 300 fonts | n/a | 0.3 to 0.8 s (GDI unload, runs off the UI thread) |
+| Launch to first results | < 400 ms | 0.6 to 0.9 s, of which WebView2 start-up is 0.4 to 0.65 s |
+| Idle memory | < 150 MB | 31 MB app process + about 220 MB WebView2 |
+
+The launch and memory budgets are not met. Both overshoots come from WebView2 itself.
 
 ## CLI
 
 ```sh
-cargo run --release -p ts-cli -- index ~/Fonts          # register + index a watched folder
-cargo run --release -p ts-cli -- index --root ~/Library  # register the managed Root folder
-cargo run --release -p ts-cli -- stats
-cargo run --release -p ts-cli -- dupes
-cargo run --release -p ts-cli -- watch
-
-typeshelf activate "Fixture Sans"        # session: gone at next logon
-typeshelf activate "Brandon" --pin       # pinned: survives reboots
-typeshelf deactivate "Brandon"           # release one holder
-typeshelf deactivate --all-session
-typeshelf active
-typeshelf reconcile [--logon]            # repair after a crash / clear last session
-typeshelf autostart on|off|status        # run `reconcile --logon` at every logon
+typeshelf index ~/Fonts                    # register and index a watched folder
+typeshelf index --root ~/Library           # register the managed Root folder
+typeshelf search garamond script:cyrillic
+typeshelf activate "Garamond" [--pin]
+typeshelf deactivate "Garamond" | --all-session
+typeshelf reconcile [--logon]
+typeshelf autostart on|off|status          # run `reconcile --logon` at every logon
+typeshelf import-fontbase [--dry-run] [--download] [--activate session|pinned]
+typeshelf google "roboto" [--get]
+typeshelf thumbs                           # pre-render every thumbnail (optional)
 ```
 
-### How activation works on Windows
+The database lives in the per-user data folder (`%LOCALAPPDATA%\typeshelf\data` on
+Windows). Use `--db` or `TYPESHELF_DB` to point at another one.
 
-Activating writes a per-user value under
-`HKCU\Software\Microsoft\Windows NT\CurrentVersion\Fonts` (tagged `[typeshelf <hash>]`) and
-broadcasts `WM_FONTCHANGE`; Windows' font cache makes the font visible to running apps within
-~200 ms. Deactivating removes the value and calls `RemoveFontResourceExW` in parallel, because a
-font an app has loaded stays in the session until then. Every change is journaled in SQLite
-first, so `reconcile` can roll back or finish anything a crash interrupted.
+## How activation works
 
-Measured on the author's machine, 300 fonts: activate 34 ms, deactivate 0.3-0.8 s (GDI removal).
+- **Windows**: writes a per-user value under `HKCU\…\Windows NT\CurrentVersion\Fonts`,
+  tagged `[typeshelf <hash>]`, then broadcasts `WM_FONTCHANGE`. Windows' font cache picks
+  the font up within about 200 ms. Deactivation also unloads the font from GDI.
+  Logoff and shutdown are caught by a hidden window, and a HKCU `Run` entry reconciles
+  at the next logon.
+- **macOS**: `CTFontManagerRegisterFontsForURL` with session scope for session fonts and
+  persistent scope for pinned ones. A LaunchAgent reconciles at login.
+- **Linux**: symlinks in `~/.local/share/fonts/typeshelf/{session,pinned}` followed by
+  `fc-cache` on that folder. An XDG autostart entry reconciles at login.
 
-The database lives in the per-user data directory (`%LOCALAPPDATA%\typeshelf\data\library.db`
-on Windows); override with `--db` or `TYPESHELF_DB`.
+Reconcile only ever touches entries typeshelf created.
 
-## Building for Windows from WSL
+## Building
+
+Frontend: `cd app && pnpm install && pnpm build`.
+
+From WSL or Linux, cross-compiling for Windows:
 
 ```sh
-cargo build --release -p ts-cli --target x86_64-pc-windows-gnu   # mingw, no extra setup
-cargo xwin build --release -p ts-cli --target x86_64-pc-windows-msvc  # needs clang, lld and llvm
+cargo xwin build --release -p ts-cli --target x86_64-pc-windows-msvc
+cargo xwin build --release -p typeshelf-app --features custom-protocol --target x86_64-pc-windows-msvc
 ```
+
+This needs `clang`, `lld`, `llvm` and `cargo-xwin`. To also build the NSIS installer
+locally (`pnpm tauri build --runner cargo-xwin --target x86_64-pc-windows-msvc`),
+install `libayatana-appindicator` and `nsis` as well.
+
+Releases: push a `v*` tag. `.github/workflows/release.yml` builds the Windows installer,
+the macOS universal `.dmg` and the Linux AppImage and `.deb`, plus CLI binaries and the
+UXP plugins, into a draft GitHub release. Signing and notarisation use optional secrets,
+listed at the top of the workflow.
+
+## Known gaps
+
+- The macOS backend is written against CoreText but is untested. It is compiled and
+  tested only in CI.
+- The UXP plugin is untested inside Photoshop and InDesign.
+- WOFF and WOFF2 files are listed but not indexed yet.
+- The glyph grid and the live OpenType preview do not work for `.ttc` collections yet.
+- No auto-updater yet. It needs a signing key pair (`pnpm tauri signer generate`) and an
+  update endpoint.

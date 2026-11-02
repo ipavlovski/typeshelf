@@ -34,8 +34,12 @@ pub fn data_dir() -> Result<PathBuf> {
 
 impl AppState {
     pub fn open(data_dir: PathBuf) -> Result<AppState> {
+        Self::open_with(data_dir, ts_activate::platform())
+    }
+
+    /// Opens with a given activation backend (tests use an in-memory one).
+    pub fn open_with(data_dir: PathBuf, backend: Option<Box<dyn Backend>>) -> Result<AppState> {
         let mut store = Store::open(&data_dir.join("library.db"))?;
-        let backend = ts_activate::platform();
         if let Some(b) = &backend {
             // Finish anything a crash interrupted; session fonts from this logon stay.
             ts_activate::reconcile(&mut store, b.as_ref(), false)?;

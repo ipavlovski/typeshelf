@@ -1,0 +1,105 @@
+# Builds installers for every platform when a version tag (v*) is pushed and
+# attaches them to a draft GitHub release.
+#
+# Optional secrets:
+#   TAURI_SIGNING_PRIVATE_KEY, TAURI_SIGNING_PRIVATE_KEY_PASSWORD  - updater signatures
+#   APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD, APPLE_SIGNING_IDENTITY,
+#   APPLE_ID, APPLE_PASSWORD, APPLE_TEAM_ID                        - macOS signing + notarisation
+name: release
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  app:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            args: ""
+          - os: macos-latest
+            args: "--target universal-apple-darwin"
+          - os: ubuntu-22.04
+            args: ""
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.os == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+      - uses: Swatinem/rust-cache@v2
+      - name: Linux packages
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - run: pnpm install --frozen-lockfile
+        working-directory: app
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        with:
+          projectPath: app
+          tagName: ${{ github.ref_name }}
+          releaseName: typeshelf ${{ github.ref_name }}
+          releaseDraft: true
+          args: ${{ matrix.args }}
+
+  cli:
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            bin: typeshelf.exe
+          - os: macos-latest
+            bin: typeshelf
+          - os: ubuntu-22.04
+            bin: typeshelf
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release -p ts-cli
+      - name: Attach to the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          name="typeshelf-cli-${{ runner.os }}-${{ runner.arch }}"
+          cp "target/release/${{ matrix.bin }}" "$name${{ runner.os == 'Windows' && '.exe' || '' }}"
+          for i in 1 2 3 4 5 6; do
+            gh release upload "${{ github.ref_name }}" "$name"* --clobber && break
+            sleep 30  # the app job creates the draft release
+          done
+  plugin:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and zip the Adobe UXP plugins
+        working-directory: plugins/adobe-uxp
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          node build.mjs
+          (cd dist && zip -r ../typeshelf-uxp-photoshop.zip photoshop && zip -r ../typeshelf-uxp-indesign.zip indesign)
+          for i in 1 2 3 4 5 6; do
+            gh release upload "${{ github.ref_name }}" typeshelf-uxp-*.zip --clobber && break
+            sleep 30
+          done

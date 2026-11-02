@@ -27,9 +27,14 @@ pub fn font_caching_apps() -> Vec<String> {
 #[cfg(not(windows))]
 pub fn install_session_end_hook(_app: tauri::AppHandle) {}
 
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
 pub fn enable_logon_reconcile() -> Result<()> {
-    Ok(())
+    ts_activate::macos::enable_logon_reconcile(&std::env::current_exe()?, "--reconcile-logon")
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+pub fn enable_logon_reconcile() -> Result<()> {
+    ts_activate::linux::enable_logon_reconcile(&std::env::current_exe()?, "--reconcile-logon")
 }
 
 #[cfg(target_os = "macos")]
