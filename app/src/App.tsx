@@ -4,6 +4,8 @@ import { api, type ActivationResult, type FamilyRow, type Library, type Scope, t
 import { Sidebar } from "./Sidebar";
 import { FontList } from "./FontList";
 import { Detail } from "./Detail";
+import { GoogleList } from "./GoogleList";
+import { ImportDialog } from "./ImportDialog";
 
 interface Progress {
   folder: string;
@@ -21,6 +23,7 @@ export function App() {
   const [detail, setDetail] = useState<FamilyRow | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [progress, setProgress] = useState<Progress | null>(null);
+  const [importing, setImporting] = useState(false);
   const toastTimer = useRef<number>(undefined);
 
   const notify = useCallback((msg: string) => {
@@ -102,6 +105,7 @@ export function App() {
         onChanged={refreshLibrary}
         onActivation={activation}
         onError={notify}
+        onImport={() => setImporting(true)}
         dropTarget={(collectionId) => {
           const faces = selectedFaces();
           if (faces.length) api.collectionAdd(collectionId, faces, true).then(refreshLibrary);
@@ -170,6 +174,9 @@ export function App() {
             </button>
           </div>
         )}
+        {scope.kind === "google" ? (
+          <GoogleList query={query} settings={settings} onActivation={activation} onError={notify} />
+        ) : (
         <FontList
           result={result}
           settings={settings}
@@ -179,6 +186,7 @@ export function App() {
           onActivation={activation}
           canActivate={library?.canActivate ?? false}
         />
+        )}
         <footer className="status">
           {progress ? (
             <span>
@@ -199,6 +207,16 @@ export function App() {
           onClose={() => setDetail(null)}
           onActivation={activation}
           onError={notify}
+        />
+      )}
+      {importing && (
+        <ImportDialog
+          onClose={() => setImporting(false)}
+          onDone={(msg) => {
+            notify(msg);
+            refreshLibrary();
+            runSearchRef.current();
+          }}
         />
       )}
       {toast && (

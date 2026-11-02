@@ -23,6 +23,25 @@ pub fn handle<R: tauri::Runtime>(
 ) {
     let app = ctx.app_handle().clone();
     let state = app.state::<AppState>();
+    if let Some((family, size, text)) = parse_google(&request) {
+        let renderer = state.renderer.clone();
+        let seq = state.thumb_seq.fetch_add(1, Ordering::Relaxed) + 1;
+        let latest = state.thumb_seq.clone();
+        state.pool.submit(seq as i64, &CancelToken::default(), move || {
+            if latest.load(Ordering::Relaxed) - seq > STALE_AFTER {
+                responder.respond(status(StatusCode::SERVICE_UNAVAILABLE));
+                return;
+            }
+            let result = renderer.thumbnail_of(&format!("google:{family}"), &text, size, || {
+                ts_providers::preview_subset(&family, &text)
+            });
+            responder.respond(match result {
+                Ok(bytes) => image(bytes),
+                Err(_) => status(StatusCode::UNPROCESSABLE_ENTITY),
+            });
+        });
+        return;
+    }
     let Some(job) = parse(&request) else {
         responder.respond(status(StatusCode::BAD_REQUEST));
         return;
@@ -45,12 +64,7 @@ pub fn handle<R: tauri::Runtime>(
         let result =
             if job.live { renderer.live(&req, job.max_width, &LineStyle::default()) } else { renderer.thumbnail(&req) };
         responder.respond(match result {
-            Ok(bytes) => Response::builder()
-                .header("Content-Type", "image/webp")
-                .header("Cache-Control", "max-age=31536000, immutable")
-                .header("Access-Control-Allow-Origin", "*")
-                .body(bytes)
-                .unwrap(),
+            Ok(bytes) => image(bytes),
             Err(_) => status(StatusCode::UNPROCESSABLE_ENTITY),
         });
     });
@@ -79,6 +93,50 @@ fn parse(request: &Request<Vec<u8>>) -> Option<Job> {
         }
     }
     Some(job)
+}
+
+/// `thumb://localhost/g/<family>/<size>?t=<text>`: a Google family not yet downloaded.
+fn parse_google(request: &Request<Vec<u8>>) -> Option<(String, u32, String)> {
+    let url = tauri::Url::parse(&request.uri().to_string()).ok()?;
+    let mut parts = url.path_segments()?;
+    if parts.next()? != "g" {
+        return None;
+    }
+    let family = percent_decode(parts.next()?);
+    let size = parts.next()?.parse::<u32>().ok()?.clamp(8, 400);
+    let text = url
+        .query_pairs()
+        .find(|(k, _)| k == "t")
+        .map(|(_, v)| v.chars().take(200).collect())
+        .unwrap_or_else(|| ts_index::DEFAULT_SAMPLE.to_owned());
+    Some((family, size, text))
+}
+
+fn percent_decode(s: &str) -> String {
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'%'
+            && let Some(v) = s.get(i + 1..i + 3).and_then(|h| u8::from_str_radix(h, 16).ok())
+        {
+            out.push(v);
+            i += 3;
+            continue;
+        }
+        out.push(b[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+fn image(bytes: Vec<u8>) -> Response<Vec<u8>> {
+    Response::builder()
+        .header("Content-Type", "image/webp")
+        .header("Cache-Control", "max-age=31536000, immutable")
+        .header("Access-Control-Allow-Origin", "*")
+        .body(bytes)
+        .unwrap()
 }
 
 fn status(code: StatusCode) -> Response<Vec<u8>> {

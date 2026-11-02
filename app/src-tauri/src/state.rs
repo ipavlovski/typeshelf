@@ -24,6 +24,7 @@ pub struct AppState {
     pub thumb_seq: Arc<AtomicU64>,
     /// Bumped per search; a search that sees a newer value stops early.
     pub search_gen: AtomicU64,
+    pub data_dir: PathBuf,
 }
 
 pub fn data_dir() -> Result<PathBuf> {
@@ -49,6 +50,7 @@ impl AppState {
             backend,
             thumb_seq: Arc::new(AtomicU64::new(0)),
             search_gen: AtomicU64::new(0),
+            data_dir,
         })
     }
 

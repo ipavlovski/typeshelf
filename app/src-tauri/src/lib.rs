@@ -1,5 +1,6 @@
 mod commands;
 mod platform;
+mod providers;
 mod state;
 mod thumbs;
 mod watch;
@@ -91,6 +92,11 @@ pub fn run() {
             commands::font_bytes,
             commands::face_codepoints,
             commands::reveal,
+            providers::fontbase_preview,
+            providers::fontbase_import,
+            providers::download_pending_fonts,
+            providers::google_catalogue,
+            providers::google_install,
         ])
         .build(tauri::generate_context!())
         .expect("error while building typeshelf");

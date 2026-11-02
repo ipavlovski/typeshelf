@@ -2,7 +2,8 @@ use anyhow::Result;
 use rusqlite::Connection;
 
 /// Each entry upgrades the schema by one version. Append only; never edit a shipped migration.
-const MIGRATIONS: &[&str] = &[r#"
+const MIGRATIONS: &[&str] = &[
+    r#"
 CREATE TABLE folders (
     id    INTEGER PRIMARY KEY,
     path  TEXT NOT NULL UNIQUE,
@@ -90,7 +91,18 @@ CREATE TABLE settings (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
-"#];
+"#,
+    r#"
+-- Collection members known only by PostScript name (e.g. imported from FontBase but
+-- never downloaded). `url` is where the font can be fetched, if known.
+CREATE TABLE pending_members (
+    collection_id INTEGER NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+    ps_name       TEXT NOT NULL,
+    url           TEXT,
+    PRIMARY KEY (collection_id, ps_name)
+);
+"#,
+];
 
 pub fn migrate(conn: &Connection) -> Result<()> {
     let version: usize = conn.pragma_query_value(None, "user_version", |r| r.get(0))?;

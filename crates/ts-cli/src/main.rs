@@ -1,4 +1,5 @@
 mod activation;
+mod import;
 mod render;
 
 use std::io::Write;
@@ -66,6 +67,32 @@ enum Command {
         #[arg(long, value_delimiter = ',', default_value = "32,64")]
         sizes: Vec<u32>,
     },
+    /// Import collections, favourites, active fonts and the Root folder from FontBase.
+    ImportFontbase {
+        /// FontBase's IndexedDB folder (default: %APPDATA%\FontBase\IndexedDB\file__0.indexeddb.leveldb).
+        #[arg(long)]
+        from: Option<PathBuf>,
+        /// Use this folder instead of FontBase's Root (e.g. a copy or a mounted path).
+        #[arg(long)]
+        root: Option<PathBuf>,
+        /// Show what would be imported without changing anything.
+        #[arg(long)]
+        dry_run: bool,
+        /// Re-activate the fonts FontBase had active.
+        #[arg(long, value_parser = ["none", "session", "pinned"], default_value = "none")]
+        activate: String,
+        /// Also download collection members FontBase never downloaded (Google Fonts).
+        #[arg(long)]
+        download: bool,
+    },
+    /// Download pending collection members and add them to their collections.
+    DownloadPending,
+    /// Search the Google Fonts catalogue; with --get, download a family into the Root folder.
+    Google {
+        query: String,
+        #[arg(long)]
+        get: bool,
+    },
     /// Activate fonts matching a family, full name or PostScript name.
     Activate {
         query: String,
@@ -110,6 +137,11 @@ fn main() -> Result<()> {
     };
     let mut store = Store::open(&db)?;
     match cli.command {
+        Command::ImportFontbase { from, root, dry_run, activate, download } => {
+            import::fontbase(&mut store, from, root, dry_run, download, &activate)?
+        }
+        Command::DownloadPending => import::download_pending(&mut store)?,
+        Command::Google { query, get } => import::google(&mut store, &query, get)?,
         Command::Activate { query, pin } => activation::activate(&mut store, &query, pin)?,
         Command::Deactivate { query, force, all_session } => {
             activation::deactivate(&mut store, query.as_deref(), force, all_session)?
@@ -177,7 +209,7 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn default_db() -> Result<PathBuf> {
+pub(crate) fn default_db() -> Result<PathBuf> {
     let dirs = directories::ProjectDirs::from("", "", "typeshelf").context("no home directory")?;
     Ok(dirs.data_local_dir().join("library.db"))
 }
@@ -187,7 +219,7 @@ fn absolute(path: &Path) -> Result<String> {
     Ok(p.to_string_lossy().trim_end_matches(['/', '\\']).to_owned())
 }
 
-fn register(store: &Store, path: &Path, kind: FolderKind) -> Result<Folder> {
+pub(crate) fn register(store: &Store, path: &Path, kind: FolderKind) -> Result<Folder> {
     if !path.is_dir() {
         bail!("{} is not a directory", path.display());
     }
@@ -196,7 +228,7 @@ fn register(store: &Store, path: &Path, kind: FolderKind) -> Result<Folder> {
     Ok(Folder { id, path, kind })
 }
 
-fn index(store: &mut Store, folder: &Folder) -> Result<()> {
+pub(crate) fn index(store: &mut Store, folder: &Folder) -> Result<()> {
     eprintln!("indexing {}", folder.path);
     let report = ts_index::index_folder(store, folder, &|done, total| {
         if done == total || done % 250 == 0 {

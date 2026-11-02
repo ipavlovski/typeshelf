@@ -11,6 +11,7 @@ interface Props {
   onActivation: (op: Promise<ActivationResult | void>) => Promise<void>;
   onError: (msg: string) => void;
   dropTarget: (collectionId: number) => void;
+  onImport: () => void;
 }
 
 function Item({
@@ -55,7 +56,7 @@ function InlineInput({ initial, onDone }: { initial: string; onDone: (v: string 
   );
 }
 
-export function Sidebar({ library, scope, onScope, onChanged, onActivation, onError, dropTarget }: Props) {
+export function Sidebar({ library, scope, onScope, onChanged, onActivation, onError, dropTarget, onImport }: Props) {
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
   const [editing, setEditing] = useState<{ id: number | null; parent: number | null; name: string } | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; c: Collection } | null>(null);
@@ -183,6 +184,13 @@ export function Sidebar({ library, scope, onScope, onChanged, onActivation, onEr
           </button>
         )}
       </section>
+      <section>
+        <h3>Providers</h3>
+        <Item active={is("google")} label="Google Fonts" onClick={() => onScope({ kind: "google" })} />
+      </section>
+      <button className="ghost wide" onClick={onImport}>
+        Import from FontBase…
+      </button>
       {menu && (
         <div className="menu" style={{ left: menu.x, top: menu.y }}>
           <button onClick={() => setEditing({ id: null, parent: menu.c.id, name: "" })}>New sub-collection</button>

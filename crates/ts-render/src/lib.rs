@@ -76,6 +76,27 @@ impl Renderer {
         Ok(bytes)
     }
 
+    /// A thumbnail of font data that is not in the library (e.g. a Google Fonts preview
+    /// subset), cached under `name`. `load` is only called on a cache miss.
+    pub fn thumbnail_of(
+        &self,
+        name: &str,
+        text: &str,
+        size: u32,
+        load: impl FnOnce() -> Result<Vec<u8>>,
+    ) -> Result<Vec<u8>> {
+        let key = xxhash_rust::xxh3::xxh3_64(format!("{name}\0{text}").as_bytes());
+        let cached = self.cache_dir.join(format!("x{key:016x}-{size}.webp"));
+        if let Ok(bytes) = std::fs::read(&cached) {
+            return Ok(bytes);
+        }
+        let font = LoadedFont::new(Arc::new(load()?), 0)?;
+        let text = font.drawable_text(text);
+        let bytes = encode_webp(&render_line(&font, &text, size as f32, THUMB_MAX_WIDTH, &LineStyle::default())?)?;
+        let _ = std::fs::write(&cached, &bytes);
+        Ok(bytes)
+    }
+
     /// Renders without touching the disk cache, for live sample text and the detail page.
     pub fn live(&self, req: &Request, max_width: u32, style: &LineStyle) -> Result<Vec<u8>> {
         let font = self.font(req.key, req.path)?;

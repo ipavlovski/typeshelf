@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 export type FaceId = number;
 
 export interface Scope {
-  kind: "all" | "active" | "inactive" | "pinned" | "favourites" | "collection" | "folder";
+  kind: "all" | "active" | "inactive" | "pinned" | "favourites" | "collection" | "folder" | "google";
   id?: number;
 }
 
@@ -91,6 +91,33 @@ export interface Settings {
   size: number;
 }
 
+export interface ImportPreview {
+  root: string | null;
+  rootIndexed: boolean;
+  collections: { name: string; depth: number; fonts: number; toDownload: number; missing: number }[];
+  favourites: number;
+  active: number;
+}
+
+export interface ImportResult {
+  created: number;
+  reused: number;
+  members: number;
+  resolved: number;
+  pending: number;
+  activated: number;
+  failedDownloads: number;
+}
+
+export interface GoogleFamily {
+  family: string;
+  category: string;
+  styles: number;
+  variable: boolean;
+  popularity: number;
+  installed: boolean;
+}
+
 export const DEFAULT_SAMPLE = "The quick brown fox jumps over the lazy dog";
 export const DEFAULT_SETTINGS: Settings = { sample: DEFAULT_SAMPLE, size: 42 };
 
@@ -114,6 +141,12 @@ export const api = {
   fontBytes: (face: FaceId) => invoke<ArrayBuffer>("font_bytes", { face }),
   faceCodepoints: (face: FaceId) => invoke<number[]>("face_codepoints", { face }),
   reveal: (face: FaceId) => invoke<void>("reveal", { face }),
+  fontbasePreview: () => invoke<ImportPreview | null>("fontbase_preview"),
+  fontbaseImport: (download: boolean, activate: "none" | "session" | "pinned") =>
+    invoke<ImportResult>("fontbase_import", { options: { download, activate } }),
+  downloadPending: () => invoke<number>("download_pending_fonts"),
+  googleCatalogue: () => invoke<GoogleFamily[]>("google_catalogue"),
+  googleInstall: (family: string) => invoke<FaceId[]>("google_install", { family }),
 };
 
 // Custom protocols are served as http://<scheme>.localhost on Windows.
@@ -134,3 +167,9 @@ export function thumbUrl(face: FaceId, size: number, text: string, maxWidth?: nu
 
 /** Row image height in CSS pixels for a font size (matches the renderer's line height). */
 export const lineHeight = (size: number) => Math.ceil(Math.round(size * window.devicePixelRatio) * 1.4) / window.devicePixelRatio;
+
+/** Preview of a Google family that is not downloaded yet. */
+export function googleThumbUrl(family: string, size: number, text: string): string {
+  const px = Math.round(size * window.devicePixelRatio);
+  return `${THUMB_BASE}g/${encodeURIComponent(family)}/${px}?t=${encodeURIComponent(text)}`;
+}

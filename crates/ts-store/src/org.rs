@@ -91,6 +91,62 @@ impl Store {
         Ok(())
     }
 
+    pub fn add_pending(&mut self, id: i64, members: &[(String, Option<String>)]) -> Result<()> {
+        let tx = self.conn.transaction()?;
+        {
+            let mut stmt = tx.prepare_cached(
+                "INSERT INTO pending_members (collection_id, ps_name, url) VALUES (?1, ?2, ?3)
+                 ON CONFLICT DO UPDATE SET url = COALESCE(excluded.url, url)",
+            )?;
+            for (ps, url) in members {
+                stmt.execute(params![id, ps, url])?;
+            }
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Distinct pending fonts with a download URL, as `(PostScript name, url)`.
+    pub fn pending_downloads(&self) -> Result<Vec<(String, String)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT ps_name, MIN(url) FROM pending_members WHERE url IS NOT NULL GROUP BY ps_name ORDER BY ps_name",
+        )?;
+        Ok(stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<rusqlite::Result<_>>()?)
+    }
+
+    pub fn pending_count(&self) -> Result<u64> {
+        Ok(self.conn.query_row("SELECT COUNT(DISTINCT ps_name) FROM pending_members", [], |r| r.get(0))?)
+    }
+
+    /// Turns pending members whose font is now indexed into real members. Returns how many resolved.
+    pub fn resolve_pending(&mut self) -> Result<usize> {
+        let tx = self.conn.transaction()?;
+        tx.execute(
+            "CREATE TEMP TABLE resolved AS
+             SELECT p.collection_id, p.ps_name, f.hash, f.face_index
+             FROM pending_members p JOIN faces f ON f.ps_name = p.ps_name
+             UNION
+             -- Downloads are saved as <name>.ttf; the font inside may have been renamed since.
+             SELECT p.collection_id, p.ps_name, f.hash, f.face_index
+             FROM pending_members p JOIN files fl ON fl.path LIKE '%/' || p.ps_name || '.ttf'
+                  OR fl.path LIKE '%\\' || p.ps_name || '.ttf'
+             JOIN faces f ON f.file_id = fl.id",
+            [],
+        )?;
+        tx.execute(
+            "INSERT OR IGNORE INTO collection_members (collection_id, hash, face_index)
+             SELECT collection_id, hash, face_index FROM resolved",
+            [],
+        )?;
+        let n = tx.execute(
+            "DELETE FROM pending_members WHERE (collection_id, ps_name) IN (SELECT collection_id, ps_name FROM resolved)",
+            [],
+        )?;
+        tx.execute("DROP TABLE resolved", [])?;
+        tx.commit()?;
+        Ok(n)
+    }
+
     pub fn favourites(&self) -> Result<Vec<FaceKey>> {
         let mut stmt = self.conn.prepare("SELECT hash, face_index FROM favourites")?;
         let rows = stmt.query_map([], |r| Ok(FaceKey { hash: FileHash::from_sql(r.get(0)?), index: r.get(1)? }))?;
@@ -132,6 +188,49 @@ mod tests {
         store.delete_collection(serif).unwrap();
         assert_eq!(store.collections().unwrap().len(), 1, "child deleted with parent");
         assert_eq!(store.collection_members().unwrap(), vec![(sans, key(3))]);
+    }
+
+    #[test]
+    fn pending_members_resolve_once_indexed() {
+        use crate::{FileRecord, FileStatus, FolderKind};
+        let mut store = Store::open_in_memory().unwrap();
+        let col = store.create_collection(None, "Google").unwrap();
+        store
+            .add_pending(col, &[("Joan-Regular".into(), Some("https://x/joan.ttf".into())), ("Gone".into(), None)])
+            .unwrap();
+        assert_eq!(store.pending_downloads().unwrap(), [("Joan-Regular".to_owned(), "https://x/joan.ttf".to_owned())]);
+        assert_eq!(store.resolve_pending().unwrap(), 0);
+
+        let folder = store.add_folder("/f", FolderKind::Root).unwrap();
+        let mut face = crate::tests::face("Joan");
+        face.ps_name = "Joan-Regular".into();
+        let rec = FileRecord {
+            path: "/f/joan.ttf".into(),
+            size: 1,
+            mtime: 0,
+            hash: Some(FileHash(5)),
+            status: FileStatus::Ok,
+            faces: vec![face],
+        };
+        store.write_files(folder, &[rec]).unwrap();
+        assert_eq!(store.resolve_pending().unwrap(), 1);
+        assert_eq!(store.collection_members().unwrap(), vec![(col, key(5))]);
+        assert_eq!(store.pending_count().unwrap(), 1, "the font without a URL stays pending");
+
+        // A download saved as Renamed-Old.ttf whose font now has another PostScript name.
+        store.add_pending(col, &[("Renamed-Old".into(), Some("https://x/r.ttf".into()))]).unwrap();
+        let mut face = crate::tests::face("Renamed");
+        face.ps_name = "Renamed-New".into();
+        let rec = FileRecord {
+            path: "/f/Providers/Google/Renamed-Old.ttf".into(),
+            size: 1,
+            mtime: 0,
+            hash: Some(FileHash(6)),
+            status: FileStatus::Ok,
+            faces: vec![face],
+        };
+        store.write_files(folder, &[rec]).unwrap();
+        assert_eq!(store.resolve_pending().unwrap(), 1);
     }
 
     #[test]

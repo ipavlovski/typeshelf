@@ -350,7 +350,7 @@ fn decode_axes(s: &str) -> Vec<Axis> {
 mod tests {
     use super::*;
 
-    fn face(family: &str) -> FaceInfo {
+    pub(crate) fn face(family: &str) -> FaceInfo {
         FaceInfo {
             index: 0,
             family: family.into(),
