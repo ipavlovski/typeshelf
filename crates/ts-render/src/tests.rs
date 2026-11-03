@@ -82,3 +82,17 @@ fn live_render_applies_variations() {
     let style = LineStyle { variations: vec![("wght".into(), 900.0)], ..Default::default() };
     assert!(!r.live(&req, 800, &style).unwrap().is_empty());
 }
+
+#[test]
+fn stacks_lines_into_an_ink_sheet() {
+    let font = load("FixtureSans-Light.ttf", 0);
+    let a = render_line(&font, "Hamburg", 30.0, 400, &LineStyle::default()).unwrap();
+    let b = render_line(&font, "fonts", 20.0, 400, &LineStyle::default()).unwrap();
+    let heights = a.height + b.height;
+    let sheet = stack(&[Some(a), None, Some(b)], 500, 4);
+    assert_eq!(sheet.width, 500);
+    assert_eq!(sheet.height, heights + 9 + 4 * 4);
+    assert!(ink(&sheet) > 0);
+    let webp = encode_webp_ink(&sheet).unwrap();
+    assert_eq!(&webp[..4], b"RIFF");
+}

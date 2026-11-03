@@ -32,6 +32,8 @@ pub struct FamilyRow {
     pub active: u32,
     pub pinned: u32,
     pub favourites: u32,
+    /// Tags on any of the family's faces, e.g. `serif/slab`.
+    pub tags: Vec<String>,
     /// Face shown as the family's preview: the one closest to Regular.
     pub preview: FaceId,
     /// Every matching face, so activation and collection actions apply to exactly what is shown.
@@ -74,6 +76,7 @@ fn family_row(snap: &Snapshot, fam: u32, faces: Vec<FaceId>) -> FamilyRow {
         active: faces.iter().filter(|&&f| snap.is_active(f)).count() as u32,
         pinned: faces.iter().filter(|&&f| snap.is_pinned(f)).count() as u32,
         favourites: faces.iter().filter(|&&f| snap.is_favourite(f)).count() as u32,
+        tags: snap.family_tags(fam),
         preview,
         face_ids: faces,
     }
@@ -234,9 +237,20 @@ pub struct CollectionDto {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct TagDto {
+    /// Full path, e.g. `serif/slab`.
+    pub path: String,
+    /// Faces with this tag or one below it.
+    pub faces: u64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Library {
     pub folders: Vec<FolderDto>,
     pub collections: Vec<CollectionDto>,
+    /// Depth-first: every tag is followed by its sub-tags.
+    pub tags: Vec<TagDto>,
     pub all: u64,
     pub active: u64,
     pub pinned: u64,
@@ -270,9 +284,11 @@ pub async fn library(state: State<'_, AppState>) -> Res<Library> {
             CollectionDto { id: c.id, parent_id: c.parent_id, name: c.name, faces: faces.len(), active }
         })
         .collect();
+    let tags = snap.tag_tree().into_iter().map(|t| TagDto { path: t.path, faces: t.faces.len() }).collect();
     Ok(Library {
         folders,
         collections,
+        tags,
         all: snap.faces.len() as u64,
         active: count(Filter::Active),
         pinned: count(Filter::Pinned),
@@ -345,6 +361,28 @@ pub async fn collection_delete(state: State<'_, AppState>, id: i64) -> Res<()> {
 #[tauri::command]
 pub async fn collection_add(state: State<'_, AppState>, id: i64, faces: Vec<FaceId>, add: bool) -> Res<()> {
     state.add_to_collection(id, &faces, add).map_err(err)
+}
+
+/// Adds or removes a tag on faces; returns the tag as stored (an existing tag keeps its spelling).
+#[tauri::command]
+pub async fn tag_set(state: State<'_, AppState>, tag: String, faces: Vec<FaceId>, add: bool) -> Res<String> {
+    state.set_tag(&tag, &faces, add).map_err(err)
+}
+
+/// Renames a tag and its sub-tags.
+#[tauri::command]
+pub async fn tag_rename(state: State<'_, AppState>, from: String, to: String) -> Res<()> {
+    let mut store = state.store.lock().unwrap();
+    store.rename_tag(&from, &to).map_err(err)?;
+    state.refresh_tags(&store).map_err(err)
+}
+
+/// Removes a tag and its sub-tags from every font.
+#[tauri::command]
+pub async fn tag_delete(state: State<'_, AppState>, tag: String) -> Res<()> {
+    let store = state.store.lock().unwrap();
+    store.delete_tag(&tag).map_err(err)?;
+    state.refresh_tags(&store).map_err(err)
 }
 
 #[tauri::command]

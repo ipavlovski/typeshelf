@@ -7,7 +7,7 @@
 mod query;
 mod text;
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use anyhow::Result;
 use nucleo_matcher::pattern::{CaseMatching, Normalization, Pattern};
@@ -61,9 +61,32 @@ pub struct Snapshot {
     collections: Vec<Collection>,
     collection_members: HashMap<i64, RoaringBitmap>,
     favourites: RoaringBitmap,
+    /// Lowercased tag path → tag.
+    tags: BTreeMap<String, Tag>,
+    /// Tags on each face, as spelled.
+    face_tags: HashMap<FaceId, Vec<String>>,
     active: RoaringBitmap,
     pinned: RoaringBitmap,
     columns: HashMap<String, SortedColumn>,
+}
+
+struct Tag {
+    name: String,
+    faces: RoaringBitmap,
+}
+
+/// A node of the tag tree: an assigned tag, or a parent implied by one.
+#[derive(Clone, PartialEq, Debug)]
+pub struct TagNode {
+    /// Full path as spelled, e.g. `serif/slab`.
+    pub path: String,
+    /// Faces carrying this tag or one below it.
+    pub faces: RoaringBitmap,
+}
+
+/// Lowercased tag paths are the keys of `tags`, so `#Serif` and `#serif` mean the same.
+fn tag_key(tag: &str) -> String {
+    tag.to_lowercase()
 }
 
 /// Matching families in rank order, each with its matching faces.
@@ -78,6 +101,7 @@ impl Snapshot {
         let mut snap = Snapshot::build(store.faces()?, store.folders()?);
         snap.set_collections(store.collections()?, &store.collection_members()?);
         snap.set_favourites(&store.favourites()?);
+        snap.set_tags(&store.face_tags()?);
         snap.set_activations(&store.activations()?);
         Ok(snap)
     }
@@ -101,6 +125,8 @@ impl Snapshot {
             collections: Vec::new(),
             collection_members: HashMap::new(),
             favourites: RoaringBitmap::new(),
+            tags: BTreeMap::new(),
+            face_tags: HashMap::new(),
             active: RoaringBitmap::new(),
             pinned: RoaringBitmap::new(),
             columns: HashMap::new(),
@@ -171,15 +197,93 @@ impl Snapshot {
     pub fn set_collections(&mut self, collections: Vec<Collection>, members: &[(i64, FaceKey)]) {
         self.collection_members.clear();
         for (cid, key) in members {
-            if let Some(&id) = self.by_key.get(key) {
-                self.collection_members.entry(*cid).or_default().insert(id);
-            }
+            let ids = self.faces_with_key(*key);
+            self.collection_members.entry(*cid).or_default().extend(ids);
         }
         self.collections = collections;
     }
 
     pub fn set_favourites(&mut self, keys: &[FaceKey]) {
-        self.favourites = keys.iter().filter_map(|k| self.by_key.get(k).copied()).collect();
+        self.favourites = keys.iter().flat_map(|&k| self.faces_with_key(k)).collect();
+    }
+
+    pub fn set_tags(&mut self, tags: &[(String, FaceKey)]) {
+        self.tags.clear();
+        self.face_tags.clear();
+        for (name, key) in tags {
+            for id in self.faces_with_key(*key) {
+                let tag = self
+                    .tags
+                    .entry(tag_key(name))
+                    .or_insert_with(|| Tag { name: name.clone(), faces: RoaringBitmap::new() });
+                tag.faces.insert(id);
+                let on_face = self.face_tags.entry(id).or_default();
+                if !on_face.contains(&tag.name) {
+                    on_face.push(tag.name.clone());
+                }
+            }
+        }
+    }
+
+    /// Every face row with this content: the same file in several folders is one key but
+    /// several rows, and favourites, collections and tags belong to all of them.
+    fn faces_with_key(&self, key: FaceKey) -> Vec<FaceId> {
+        let rows = self.by_hash.get(&key.hash).map_or(&[][..], Vec::as_slice);
+        rows.iter().copied().filter(|&id| self.faces[id as usize].key.index == key.index).collect()
+    }
+
+    pub fn collections(&self) -> &[Collection] {
+        &self.collections
+    }
+
+    /// Faces tagged `tag` or anything below it (`serif` includes `serif/slab`).
+    pub fn tag_faces(&self, tag: &str) -> RoaringBitmap {
+        let key = tag_key(tag);
+        let mut out = RoaringBitmap::new();
+        // Keys sharing the prefix are contiguous, but `serif-x` sorts between `serif` and `serif/`.
+        for (k, t) in self.tags.range(key.clone()..).take_while(|(k, _)| k.starts_with(&key)) {
+            if k.len() == key.len() || k.as_bytes()[key.len()] == b'/' {
+                out |= &t.faces;
+            }
+        }
+        out
+    }
+
+    /// Every tag and implied parent tag, depth-first (each tag followed by its sub-tags),
+    /// with the faces below each.
+    pub fn tag_tree(&self) -> Vec<TagNode> {
+        // Keyed by segments so `serif/x` sorts right after `serif`, before `serif-ish`.
+        let mut nodes: BTreeMap<Vec<String>, TagNode> = BTreeMap::new();
+        for t in self.tags.values() {
+            let mut end = 0;
+            loop {
+                end = t.name[end..].find('/').map_or(t.name.len(), |i| end + i);
+                let path = &t.name[..end];
+                nodes
+                    .entry(tag_key(path).split('/').map(str::to_owned).collect())
+                    .or_insert_with(|| TagNode { path: path.to_owned(), faces: RoaringBitmap::new() })
+                    .faces |= &t.faces;
+                if end == t.name.len() {
+                    break;
+                }
+                end += 1;
+            }
+        }
+        nodes.into_values().collect()
+    }
+
+    /// Tags on any of a family's faces, sorted case-insensitively.
+    pub fn family_tags(&self, fam: FamilyId) -> Vec<String> {
+        let mut out: Vec<String> = Vec::new();
+        for id in &self.families[fam as usize].faces {
+            for t in self.face_tags.get(id).into_iter().flatten() {
+                if !out.contains(t) {
+                    out.push(t.clone());
+                }
+            }
+        }
+        out.sort_by_key(|t| tag_key(t));
+        out
     }
 
     /// Activation is per file, so every face of an active file is active.
@@ -258,6 +362,8 @@ impl Snapshot {
             Filter::Variable => self.variable.clone(),
             Filter::Italic => self.italic.clone(),
             Filter::Favourite => self.favourites.clone(),
+            Filter::Tag(t) => self.tag_faces(t),
+            Filter::Tagged => self.tags.values().fold(RoaringBitmap::new(), |acc, t| acc | &t.faces),
             Filter::Collection(id) => self.collection_faces(*id),
             Filter::CollectionName(name) => self
                 .collections

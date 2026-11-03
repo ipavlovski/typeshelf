@@ -32,6 +32,8 @@ It runs on Windows first, with macOS and Linux support. MIT licensed.
   family (or add and activate it) in one click.
 - **Adobe auto-activation**: a UXP panel for Photoshop and InDesign activates the fonts an
   opened document needs (`plugins/adobe-uxp`).
+- **MCP server**: Claude (or any MCP client) can browse the library, look at rendered
+  specimens and tag families. See [Claude and other MCP clients](#claude-and-other-mcp-clients).
 
 ## Layout
 
@@ -82,6 +84,28 @@ typeshelf thumbs                           # pre-render every thumbnail (optiona
 
 The database lives in the per-user data folder (`%LOCALAPPDATA%\typeshelf\data` on
 Windows). Use `--db` or `TYPESHELF_DB` to point at another one.
+
+## Claude and other MCP clients
+
+The running app is an MCP server. `typeshelf.exe --mcp` speaks MCP over stdio and relays to
+it (starting the app if it isn't running), so any client that can launch a program can use it,
+including Claude Code inside WSL:
+
+```sh
+# Windows
+claude mcp add typeshelf -- "%LOCALAPPDATA%\typeshelf\typeshelf.exe" --mcp
+# WSL (typeshelfDev from `pnpm preview`; it has its own library)
+claude mcp add typeshelf-dev -- "$(wslpath "$(cmd.exe /c 'echo %LOCALAPPDATA%' 2>/dev/null | tr -d '\r')")/Programs/typeshelfDev/typeshelfDev.exe" --mcp
+```
+
+Tools: `library_overview` (tag tree, collections, how much is untagged), `list_families`
+(paged, with the full search syntax, e.g. `is:untagged`), `family_details`,
+`preview_families` (a specimen sheet image), `tag_families` (add / remove / replace,
+batched), `rename_tag`, `delete_tag`. Changes show up in the open window immediately.
+
+Under the hood the messages are JSON-RPC on the local WebSocket endpoint
+(`127.0.0.1:47215`, typeshelfDev `47216`). Connections from web pages (which always send an
+`Origin`) are refused.
 
 ## How activation works
 

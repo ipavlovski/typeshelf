@@ -114,5 +114,40 @@ pub fn encode_webp(img: &Image) -> Result<Vec<u8>> {
     Ok(out)
 }
 
+/// Stacks lines into one image, left-aligned, `gap` pixels apart. A `None` entry draws a
+/// faint rule across the full width, to separate groups of lines.
+pub fn stack(lines: &[Option<Image>], width: u32, gap: u32) -> Image {
+    const RULE: u32 = 9;
+    let height: u32 = lines.iter().map(|l| l.as_ref().map_or(RULE, |i| i.height) + gap).sum::<u32>() + gap;
+    let mut alpha = vec![0u8; (width * height) as usize];
+    let mut y = gap;
+    for line in lines {
+        match line {
+            Some(img) => {
+                let w = img.width.min(width) as usize;
+                for row in 0..img.height as usize {
+                    let src = &img.alpha[row * img.width as usize..][..w];
+                    alpha[(y as usize + row) * width as usize..][..w].copy_from_slice(src);
+                }
+                y += img.height + gap;
+            }
+            None => {
+                let mid = (y + RULE / 2) as usize * width as usize;
+                alpha[mid..mid + width as usize].fill(48);
+                y += RULE + gap;
+            }
+        }
+    }
+    Image { width, height, alpha }
+}
+
+/// Lossless greyscale WebP, black ink on white: for viewers that don't tint the mask.
+pub fn encode_webp_ink(img: &Image) -> Result<Vec<u8>> {
+    let l: Vec<u8> = img.alpha.iter().map(|&a| 255 - a).collect();
+    let mut out = Vec::new();
+    image_webp::WebPEncoder::new(&mut out).encode(&l, img.width, img.height, image_webp::ColorType::L8)?;
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests;

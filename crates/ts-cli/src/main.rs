@@ -49,6 +49,11 @@ enum Command {
         #[arg(long, default_value_t = 20)]
         limit: usize,
     },
+    /// Hierarchical tags (`serif/slab`); search them with `#serif`.
+    Tag {
+        #[command(subcommand)]
+        action: TagAction,
+    },
     /// Render previews of matching faces as WebP files into a folder.
     Render {
         query: String,
@@ -129,6 +134,20 @@ enum Command {
     },
 }
 
+#[derive(Subcommand)]
+enum TagAction {
+    /// List tags with their face counts.
+    List,
+    /// Tag every face matching a search query.
+    Add { tag: String, query: Vec<String> },
+    /// Remove a tag from every face matching a search query.
+    Remove { tag: String, query: Vec<String> },
+    /// Rename a tag and its sub-tags.
+    Rename { from: String, to: String },
+    /// Remove a tag and its sub-tags from every font.
+    Delete { tag: String },
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
     let db = match cli.db {
@@ -178,6 +197,7 @@ fn main() -> Result<()> {
         }
         Command::Stats => print_stats(&store)?,
         Command::Search { query, limit } => search(&store, &query.join(" "), limit)?,
+        Command::Tag { action } => tag(&mut store, action)?,
         Command::Render { query, text, size, out } => render::render(&store, &query, &text, size, &out)?,
         Command::Thumbs { text, sizes } => render::thumbs(&store, &db, &text, &sizes)?,
         Command::Dupes => {
@@ -271,6 +291,39 @@ fn search(store: &Store, query: &str, limit: usize) -> Result<()> {
         println!("{dot} {:<40} {} styles", snap.families[*fam as usize].name, faces.len());
     }
     eprintln!("{} families, {} faces (snapshot {:.0?}, query {:.2?})", res.families.len(), res.faces, loaded, took);
+    Ok(())
+}
+
+fn tag(store: &mut Store, action: TagAction) -> Result<()> {
+    let matching = |store: &Store, query: &[String]| -> Result<Vec<ts_model::FaceKey>> {
+        let query = query.join(" ");
+        if query.trim().is_empty() {
+            bail!("give a search query for the fonts to change");
+        }
+        let snap = ts_search::Snapshot::load(store)?;
+        let res = snap.search(&ts_search::Query::parse(&query), &|| false).unwrap_or_default();
+        Ok(res.families.iter().flat_map(|(_, faces)| faces).map(|&id| snap.faces[id as usize].key).collect())
+    };
+    match action {
+        TagAction::List => {
+            let snap = ts_search::Snapshot::load(store)?;
+            for node in snap.tag_tree() {
+                println!("{:>6}  #{}", node.faces.len(), node.path);
+            }
+        }
+        TagAction::Add { tag, query } => {
+            let keys = matching(store, &query)?;
+            let tag = store.add_tag(&tag, &keys)?;
+            eprintln!("tagged {} faces #{tag}", keys.len());
+        }
+        TagAction::Remove { tag, query } => {
+            let keys = matching(store, &query)?;
+            store.remove_tag(&tag, &keys)?;
+            eprintln!("removed #{tag} from {} faces", keys.len());
+        }
+        TagAction::Rename { from, to } => store.rename_tag(&from, &to)?,
+        TagAction::Delete { tag } => eprintln!("removed {} taggings", store.delete_tag(&tag)?),
+    }
     Ok(())
 }
 

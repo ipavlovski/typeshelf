@@ -150,6 +150,28 @@ impl AppState {
         self.refresh_collections(&store)
     }
 
+    /// Adds or removes one tag on faces. Returns the tag as stored.
+    pub fn set_tag(&self, tag: &str, faces: &[FaceId], add: bool) -> Result<String> {
+        let keys: Vec<_> = {
+            let snap = self.snap.read().unwrap();
+            faces.iter().filter_map(|&id| snap.faces.get(id as usize).map(|r| r.key)).collect()
+        };
+        let mut store = self.store.lock().unwrap();
+        let tag = if add {
+            store.add_tag(tag, &keys)?
+        } else {
+            store.remove_tag(tag, &keys)?;
+            tag.to_owned()
+        };
+        self.refresh_tags(&store)?;
+        Ok(tag)
+    }
+
+    pub fn refresh_tags(&self, store: &Store) -> Result<()> {
+        self.snap.write().unwrap().set_tags(&store.face_tags()?);
+        Ok(())
+    }
+
     pub fn refresh_collections(&self, store: &Store) -> Result<()> {
         self.snap.write().unwrap().set_collections(store.collections()?, &store.collection_members()?);
         Ok(())

@@ -110,6 +110,17 @@ ALTER TABLE faces ADD COLUMN m_contrast REAL;
 -- Forces the next index run to re-read every file and measure it.
 UPDATE files SET mtime = -1;
 "#,
+    r#"
+-- Hierarchical tags ('serif/slab'), per face by content like collections. The tag column
+-- compares case-insensitively, so 'Serif' and 'serif' are one tag on a face.
+CREATE TABLE face_tags (
+    tag        TEXT NOT NULL COLLATE NOCASE,
+    hash       INTEGER NOT NULL,
+    face_index INTEGER NOT NULL,
+    PRIMARY KEY (tag, hash, face_index)
+);
+CREATE INDEX face_tags_face ON face_tags(hash, face_index);
+"#,
 ];
 
 pub fn migrate(conn: &Connection) -> Result<()> {

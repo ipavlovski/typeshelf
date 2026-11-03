@@ -150,3 +150,54 @@ fn activation_updates() {
     s.set_activations(&[]);
     assert!(names(&s, "is:active").is_empty());
 }
+
+#[test]
+fn tags_match_their_subtree() {
+    let mut s = snapshot();
+    let key = |n| FaceKey { hash: FileHash(n), index: 0 };
+    s.set_tags(&[
+        ("Serif".into(), key(4)),
+        ("Serif/Old style".into(), key(1)),
+        ("Serif/Old style".into(), key(2)),
+        ("serif-ish".into(), key(8)),
+        ("sans/grotesque".into(), key(5)),
+    ]);
+    assert_eq!(names(&s, "#serif"), ["Adobe Garamond:2", "EB Garamond:1"]);
+    assert_eq!(names(&s, r#"#"serif/old style""#), ["Adobe Garamond:2"]);
+    assert_eq!(names(&s, "#SANS"), ["Helvetica Neue:1"]);
+    assert_eq!(names(&s, "#sans/grot"), Vec::<String>::new(), "segments match whole");
+    assert_eq!(names(&s, "garamond -#serif"), ["Adobe Garamond:1"]);
+    assert_eq!(s.family_tags(0), ["Serif/Old style"]);
+    assert_eq!(names(&s, "garamond is:tagged"), ["Adobe Garamond:2", "EB Garamond:1"]);
+    assert_eq!(names(&s, "garamond is:untagged"), ["Adobe Garamond:1"]);
+
+    let tree: Vec<(String, u64)> = s.tag_tree().into_iter().map(|n| (n.path, n.faces.len())).collect();
+    assert_eq!(
+        tree,
+        [
+            ("sans".to_owned(), 1),
+            ("sans/grotesque".to_owned(), 1),
+            ("Serif".to_owned(), 3),
+            ("Serif/Old style".to_owned(), 2),
+            ("serif-ish".to_owned(), 1),
+        ]
+    );
+}
+
+#[test]
+fn duplicate_files_share_tags_favourites_and_collections() {
+    let mut a = face(1, "Dupe Sans", "Regular", 400);
+    let mut b = face(1, "Dupe Sans", "Regular", 400);
+    a.path = "/fonts/one/DupeSans.otf".into();
+    b.path = "/fonts/two/DupeSans.otf".into();
+    let mut s = Snapshot::build(vec![a, b], vec![]);
+    let key = FaceKey { hash: FileHash(1), index: 0 };
+    s.set_tags(&[("sans".into(), key)]);
+    s.set_favourites(&[key]);
+    s.set_collections(vec![Collection { id: 9, parent_id: None, name: "C".into(), sort: 0 }], &[(9, key)]);
+    let all = |q: &str| s.search(&Query::parse(q), &|| false).unwrap().faces;
+    assert_eq!(all("#sans"), 2, "both copies carry the tag");
+    assert_eq!(all("is:untagged"), 0);
+    assert_eq!(all("is:fav"), 2);
+    assert_eq!(s.collection_faces(9).len(), 2);
+}

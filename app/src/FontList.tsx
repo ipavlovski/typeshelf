@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { TagChips } from "./Tags";
 import { api, lineHeight, thumbUrl, type ActivationResult, type Face, type FamilyRow, type SearchResult, type Settings } from "./api";
 
 interface Props {
@@ -10,6 +11,10 @@ interface Props {
   onOpen: (f: FamilyRow) => void;
   onActivation: (op: Promise<ActivationResult | void>) => Promise<void>;
   canActivate: boolean;
+  query: string;
+  /** Toggles `#tag` in the search. */
+  onTagFilter: (tag: string) => void;
+  onUntag: (fam: FamilyRow, tag: string) => void;
 }
 
 const ROW_CHROME = 30; // name line + padding
@@ -46,7 +51,7 @@ export function Dot({
   );
 }
 
-export function FontList({ result, settings, selected, onSelect, onOpen, onActivation, canActivate }: Props) {
+export function FontList({ result, settings, selected, onSelect, onOpen, onActivation, canActivate, query, onTagFilter, onUntag }: Props) {
   const parent = useRef<HTMLDivElement>(null);
   const [expanded, setExpanded] = useState<Map<number, Face[]>>(new Map());
   const anchor = useRef<number | null>(null);
@@ -160,6 +165,7 @@ export function FontList({ result, settings, selected, onSelect, onOpen, onActiv
                 )}
                 {fam.favourites > 0 && <span className="fav">★</span>}
                 {fam.pinned > 0 && <span className="badge" title="Pinned: survives reboots">pinned</span>}
+                {fam.tags.length > 0 && <TagChips tags={fam.tags} query={query} onFilter={onTagFilter} onRemove={(t) => onUntag(fam, t)} />}
               </div>
               <img className="preview" src={thumbUrl(fam.preview, settings.size, settings.sample)} style={{ height: imgHeight }} alt="" draggable={false} />
             </div>

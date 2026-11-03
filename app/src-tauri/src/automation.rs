@@ -10,6 +10,8 @@
 //! → {"type":"ping"}
 //! ← {"type":"pong","app":"typeshelf","version":"0.1.0"}
 //! ```
+//!
+//! JSON-RPC 2.0 messages (`{"jsonrpc":"2.0",…}`) on the same socket are MCP, handled by src/mcp.rs.
 
 use std::collections::HashSet;
 use std::net::{TcpListener, TcpStream};
@@ -52,8 +54,40 @@ pub fn start(app: AppHandle) {
 }
 
 fn serve(app: &AppHandle, stream: TcpStream) {
-    let Ok(mut ws) = tungstenite::accept(stream) else { return };
+    // Browsers send an Origin with every WebSocket, so a web page can't drive MCP; the stdio
+    // bridge and other local tools send none.
+    let mut from_browser = false;
+    // The handshake's error type is tungstenite's, sized as it is.
+    #[allow(clippy::result_large_err)]
+    let Ok(mut ws) = tungstenite::accept_hdr(stream, |req: &tungstenite::handshake::server::Request, resp| {
+        from_browser = req.headers().contains_key("origin");
+        Ok(resp)
+    }) else {
+        return;
+    };
     while let Ok(msg) = ws.read() {
+        if let Message::Text(text) = &msg
+            && let Ok(rpc) = serde_json::from_str::<Value>(text)
+            && rpc.get("jsonrpc").is_some()
+        {
+            let reply = if from_browser {
+                rpc.get("id").map(|id| {
+                    json!({ "jsonrpc": "2.0", "id": id, "error": { "code": -32600, "message": "MCP is not available to web pages" } })
+                })
+            } else {
+                let (reply, changed) = crate::mcp::handle(&app.state::<AppState>(), &rpc);
+                if changed {
+                    let _ = app.emit("library-changed", ());
+                }
+                reply
+            };
+            if let Some(reply) = reply
+                && ws.send(Message::text(reply.to_string())).is_err()
+            {
+                break;
+            }
+            continue;
+        }
         let reply = match msg {
             Message::Text(text)
                 if crate::channel::IS_DEV && matches!(serde_json::from_str(&text), Ok(Request::Quit)) =>

@@ -1,6 +1,7 @@
 mod automation;
 mod channel;
 mod commands;
+mod mcp;
 mod platform;
 mod providers;
 mod state;
@@ -25,6 +26,13 @@ fn reconcile_logon() -> anyhow::Result<()> {
 }
 
 pub fn run() {
+    if std::env::args().any(|a| a == "--mcp") {
+        if let Err(e) = mcp::bridge() {
+            eprintln!("{e:#}");
+            std::process::exit(1);
+        }
+        return;
+    }
     if std::env::args().any(|a| a == "--reconcile-logon") {
         if let Err(e) = reconcile_logon() {
             eprintln!("reconcile failed: {e:#}");
@@ -103,6 +111,9 @@ pub fn run() {
             commands::collection_rename,
             commands::collection_delete,
             commands::collection_add,
+            commands::tag_set,
+            commands::tag_rename,
+            commands::tag_delete,
             commands::get_settings,
             commands::set_settings,
             commands::font_bytes,

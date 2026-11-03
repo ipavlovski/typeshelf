@@ -3,6 +3,7 @@
 mod journal;
 mod org;
 mod schema;
+mod tags;
 
 use std::collections::HashMap;
 use std::path::Path;

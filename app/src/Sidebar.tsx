@@ -1,7 +1,8 @@
 import { useState, type ReactNode } from "react";
 import { ask, open } from "@tauri-apps/plugin-dialog";
-import { api, type ActivationResult, type Collection, type Library, type Scope } from "./api";
+import { api, type ActivationResult, type Collection, type Library, type Scope, type Tag } from "./api";
 import { Dot } from "./FontList";
+import { queryHasTag, tagToken } from "./Tags";
 
 interface Props {
   library: Library | null;
@@ -15,7 +16,13 @@ interface Props {
   onSettings: () => void;
   /** A downloaded update is waiting: shown as a dot on the settings button. */
   updatePending: boolean;
+  query: string;
+  /** Toggles `#tag` in the search. */
+  onTagFilter: (tag: string) => void;
+  onTagsChanged: () => void;
 }
+
+const isBelow = (path: string, parent: string) => path.toLowerCase().startsWith(`${parent.toLowerCase()}/`);
 
 function Item({
   active,
@@ -59,8 +66,25 @@ function InlineInput({ initial, onDone }: { initial: string; onDone: (v: string 
   );
 }
 
-export function Sidebar({ library, scope, onScope, onChanged, onActivation, onError, dropTarget, onImport, onSettings, updatePending }: Props) {
+export function Sidebar({
+  library,
+  scope,
+  onScope,
+  onChanged,
+  onActivation,
+  onError,
+  dropTarget,
+  onImport,
+  onSettings,
+  updatePending,
+  query,
+  onTagFilter,
+  onTagsChanged,
+}: Props) {
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
+  const [collapsedTags, setCollapsedTags] = useState<Set<string>>(new Set());
+  const [renamingTag, setRenamingTag] = useState<string | null>(null);
+  const [tagMenu, setTagMenu] = useState<{ x: number; y: number; t: Tag } | null>(null);
   const [editing, setEditing] = useState<{ id: number | null; parent: number | null; name: string } | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; c: Collection } | null>(null);
   const is = (kind: Scope["kind"], id?: number) => scope.kind === kind && scope.id === id;
@@ -136,8 +160,69 @@ export function Sidebar({ library, scope, onScope, onChanged, onActivation, onEr
         return [node, ...(open ? tree(c.id, depth + 1) : []), newChild];
       });
 
+  const tags = library?.tags ?? [];
+  const tagTree = tags
+    .filter((t) => ![...collapsedTags].some((c) => isBelow(t.path, c)))
+    .map((t) => {
+      const segments = t.path.split("/");
+      const depth = segments.length - 1;
+      const children = tags.some((x) => isBelow(x.path, t.path));
+      const open = !collapsedTags.has(t.path);
+      if (renamingTag === t.path) {
+        return (
+          <div key={t.path} className="nav-item" style={{ paddingLeft: 12 + depth * 14 }}>
+            <InlineInput
+              initial={t.path}
+              onDone={async (to) => {
+                setRenamingTag(null);
+                if (!to || to === t.path) return;
+                try {
+                  await api.tagRename(t.path, to);
+                  onTagsChanged();
+                } catch (e) {
+                  onError(String(e));
+                }
+              }}
+            />
+          </div>
+        );
+      }
+      return (
+        <div
+          key={t.path}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            setTagMenu({ x: e.clientX, y: e.clientY, t });
+          }}
+          title={`${tagToken(t.path)}: click to add to the search`}
+        >
+          <Item active={queryHasTag(query, t.path)} label={segments[depth]} count={t.faces} depth={depth} onClick={() => onTagFilter(t.path)}>
+            <span
+              className={`caret ${children ? "" : "hidden"}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                const next = new Set(collapsedTags);
+                if (open) next.add(t.path);
+                else next.delete(t.path);
+                setCollapsedTags(next);
+              }}
+            >
+              {open ? "▾" : "▸"}
+            </span>
+            <span className="tag-hash">#</span>
+          </Item>
+        </div>
+      );
+    });
+
   return (
-    <aside className="sidebar" onClick={() => setMenu(null)}>
+    <aside
+      className="sidebar"
+      onClick={() => {
+        setMenu(null);
+        setTagMenu(null);
+      }}
+    >
       <div className="brand">
         typeshelf
         <button className="ghost settings-button" onClick={onSettings} title="Settings">
@@ -165,6 +250,11 @@ export function Sidebar({ library, scope, onScope, onChanged, onActivation, onEr
             <InlineInput initial="" onDone={saveEdit} />
           </div>
         )}
+      </section>
+      <section>
+        <h3>Tags</h3>
+        {tagTree}
+        {library && tags.length === 0 && <p className="hint">Select fonts and choose Tag… to add one. Use / for sub-tags.</p>}
       </section>
       <section>
         <h3>
@@ -199,6 +289,30 @@ export function Sidebar({ library, scope, onScope, onChanged, onActivation, onEr
       <button className="ghost wide" onClick={onImport}>
         Import from FontBase…
       </button>
+      {tagMenu && (
+        <div className="menu" style={{ left: tagMenu.x, top: tagMenu.y }}>
+          <button onClick={() => onTagFilter(tagMenu.t.path)}>Search {tagToken(tagMenu.t.path)}</button>
+          <button onClick={() => setRenamingTag(tagMenu.t.path)}>Rename…</button>
+          <button
+            className="danger"
+            onClick={async () => {
+              const t = tagMenu.t;
+              const below = tags.some((x) => isBelow(x.path, t.path)) ? " and its sub-tags" : "";
+              if (await ask(`Remove ${tagToken(t.path)}${below} from every font? Fonts are not deleted.`, { title: "Delete tag", kind: "warning" })) {
+                try {
+                  await api.tagDelete(t.path);
+                  if (queryHasTag(query, t.path)) onTagFilter(t.path);
+                  onTagsChanged();
+                } catch (e) {
+                  onError(String(e));
+                }
+              }
+            }}
+          >
+            Delete
+          </button>
+        </div>
+      )}
       {menu && (
         <div className="menu" style={{ left: menu.x, top: menu.y }}>
           <button onClick={() => setEditing({ id: null, parent: menu.c.id, name: "" })}>New sub-collection</button>

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { api, type ActivationResult, type FamilyRow, type Library, type Scope, type SearchResult, type Settings, DEFAULT_SETTINGS } from "./api";
+import { api, type ActivationResult, type FaceId, type FamilyRow, type Library, type Scope, type SearchResult, type Settings, DEFAULT_SETTINGS } from "./api";
 import { Sidebar } from "./Sidebar";
 import { FontList } from "./FontList";
 import { Detail } from "./Detail";
@@ -11,6 +11,7 @@ import { Settings as SettingsWindow } from "./Settings";
 import { Updates } from "./Updates";
 import { useUpdates } from "./useUpdates";
 import { versionLabel } from "./versions";
+import { SearchBox, TagInput, toggleTag } from "./Tags";
 
 interface Progress {
   folder: string;
@@ -32,6 +33,7 @@ export function App() {
   const [showShape, setShowShape] = useState(false);
   const [ranges, setRanges] = useState<Ranges>({});
   const [libraryVersion, setLibraryVersion] = useState(0);
+  const [tagging, setTagging] = useState(false);
   const [panel, setPanel] = useState<"settings" | "updates" | null>(null);
   const { app, status } = useUpdates();
   const toastTimer = useRef<number>(undefined);
@@ -104,6 +106,18 @@ export function App() {
   const selectedFaces = () =>
     (result?.families ?? []).filter((f) => selected.has(f.id)).flatMap((f) => f.faceIds);
 
+  /** Tags or untags faces, then refreshes chips and counts. */
+  const tag = async (tag: string, faces: FaceId[], add: boolean) => {
+    try {
+      const stored = await api.tagSet(tag, faces, add);
+      if (add) notify(`Tagged ${faces.length.toLocaleString()} ${faces.length === 1 ? "style" : "styles"} #${stored}`);
+    } catch (e) {
+      notify(String(e));
+    }
+    await activation(Promise.resolve());
+  };
+  const tagFilter = (t: string) => setQuery((q) => toggleTag(q, t));
+
   return (
     <div className="app">
       <Sidebar
@@ -117,6 +131,9 @@ export function App() {
         onActivation={activation}
         onError={notify}
         onImport={() => setImporting(true)}
+        query={query}
+        onTagFilter={tagFilter}
+        onTagsChanged={() => activation(Promise.resolve())}
         onSettings={() => setPanel("settings")}
         updatePending={status.state === "ready"}
         dropTarget={(collectionId) => {
@@ -126,14 +143,7 @@ export function App() {
       />
       <main className="main">
         <header className="toolbar">
-          <input
-            className="search"
-            placeholder="Search — try script:cyrillic wght:>600 feat:ss01 is:active"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            spellCheck={false}
-            autoFocus
-          />
+          <SearchBox value={query} onChange={setQuery} tags={library?.tags ?? []} />
           <input
             className="sample"
             placeholder="Sample text"
@@ -171,6 +181,19 @@ export function App() {
             <button onClick={() => activation(api.setActive(selectedFaces(), false))}>Deactivate</button>
             <button onClick={() => activation(api.setActive(selectedFaces(), true, true))}>Pin</button>
             <button onClick={() => api.setFavourite(selectedFaces(), true).then(() => activation(Promise.resolve()))}>Favourite</button>
+            {tagging ? (
+              <TagInput
+                tags={library?.tags ?? []}
+                onDone={(t) => {
+                  setTagging(false);
+                  if (t) tag(t, selectedFaces(), true);
+                }}
+              />
+            ) : (
+              <button onClick={() => setTagging(true)} title="Tag the selected families; use / for sub-tags, e.g. serif/slab">
+                Tag…
+              </button>
+            )}
             <select
               value=""
               onChange={(e) => {
@@ -206,6 +229,9 @@ export function App() {
           onOpen={setDetail}
           onActivation={activation}
           canActivate={library?.canActivate ?? false}
+          query={query}
+          onTagFilter={tagFilter}
+          onUntag={async (fam, t) => tag(t, (await api.familyFaces(fam.id)).map((f) => f.id), false)}
         />
         )}
         <footer className="status">

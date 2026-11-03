@@ -172,3 +172,27 @@ impl FaceInfo {
         !self.axes.is_empty()
     }
 }
+
+/// Canonical form of a hierarchical tag (`serif/slab/egyptian`): leading `#`s are dropped, each `/`-separated segment is trimmed with inner whitespace collapsed, and empty
+/// segments are removed. Case is kept. `None` if nothing is left.
+pub fn normalize_tag(s: &str) -> Option<String> {
+    let segments: Vec<String> = s
+        .split('/')
+        .map(|seg| seg.trim().trim_start_matches('#').split_whitespace().collect::<Vec<_>>().join(" "))
+        .filter(|seg| !seg.is_empty())
+        .collect();
+    (!segments.is_empty()).then(|| segments.join("/"))
+}
+
+#[cfg(test)]
+mod tag_tests {
+    use super::normalize_tag;
+
+    #[test]
+    fn normalizes_tags() {
+        assert_eq!(normalize_tag("#Serif/ Slab //egyptian ").as_deref(), Some("Serif/Slab/egyptian"));
+        assert_eq!(normalize_tag("hand  made").as_deref(), Some("hand made"));
+        assert_eq!(normalize_tag(" / # "), None);
+        assert_eq!(normalize_tag("#"), None);
+    }
+}

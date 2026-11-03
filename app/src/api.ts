@@ -14,6 +14,8 @@ export interface FamilyRow {
   active: number;
   pinned: number;
   favourites: number;
+  /** Tags on any of the family's faces, e.g. `serif/slab`. */
+  tags: string[];
   preview: FaceId;
   faceIds: FaceId[];
 }
@@ -69,9 +71,18 @@ export interface Collection {
   active: number;
 }
 
+export interface Tag {
+  /** Full path, e.g. `serif/slab`. */
+  path: string;
+  /** Faces with this tag or one below it. */
+  faces: number;
+}
+
 export interface Library {
   folders: Folder[];
   collections: Collection[];
+  /** Depth-first: every tag is followed by its sub-tags. */
+  tags: Tag[];
   all: number;
   active: number;
   pinned: number;
@@ -170,6 +181,9 @@ export const api = {
   collectionRename: (id: number, name: string) => invoke<void>("collection_rename", { id, name }),
   collectionDelete: (id: number) => invoke<void>("collection_delete", { id }),
   collectionAdd: (id: number, faces: FaceId[], add: boolean) => invoke<void>("collection_add", { id, faces, add }),
+  tagSet: (tag: string, faces: FaceId[], add: boolean) => invoke<string>("tag_set", { tag, faces, add }),
+  tagRename: (from: string, to: string) => invoke<void>("tag_rename", { from, to }),
+  tagDelete: (tag: string) => invoke<void>("tag_delete", { tag }),
   getSettings: async (): Promise<Settings> => ({ ...DEFAULT_SETTINGS, ...(await invoke<Partial<Settings>>("get_settings")) }),
   setSettings: (settings: Settings) => invoke<void>("set_settings", { settings }),
   fontBytes: (face: FaceId) => invoke<ArrayBuffer>("font_bytes", { face }),

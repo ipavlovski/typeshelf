@@ -1,8 +1,10 @@
 //! Query syntax: free text plus `key:value` filters.
 //!
 //! ```text
-//! garamond script:cyrillic feat:ss01 wght:>600 col:"2. SANS SERIF" is:active -is:italic
+//! garamond script:cyrillic feat:ss01 wght:>600 col:"2. SANS SERIF" is:active -is:italic #serif/slab
 //! ```
+//! `#tag` (or `tag:tag`) matches the tag and every tag below it; `#"hand made"` for spaces.
+//! `is:tagged` / `is:untagged` match faces with any tag / none.
 //! Ranges: `wght:600`, `wght:>600`, `wght:<=300`, `wght:300..500`.
 
 use ts_model::Block;
@@ -17,6 +19,10 @@ pub enum Filter {
     Variable,
     Italic,
     Favourite,
+    /// Any tag at all (`-is:tagged` finds what is left to tag).
+    Tagged,
+    /// Hierarchical tag, including its sub-tags (case-insensitive).
+    Tag(String),
     /// Collection by id, including sub-collections.
     Collection(i64),
     /// Collection by name, case-insensitive, including sub-collections.
@@ -85,6 +91,9 @@ fn parse_filter(token: &str) -> Option<Filter> {
     if let Some(rest) = token.strip_prefix('-') {
         return parse_filter(rest).map(|f| Filter::Not(Box::new(f)));
     }
+    if let Some(rest) = token.strip_prefix('#') {
+        return ts_model::normalize_tag(rest).map(Filter::Tag);
+    }
     let (key, value) = token.split_once(':')?;
     if value.is_empty() {
         return None;
@@ -102,9 +111,12 @@ fn parse_filter(token: &str) -> Option<Filter> {
             "static" => Filter::Not(Box::new(Filter::Variable)),
             "italic" => Filter::Italic,
             "fav" | "favorite" | "favourite" => Filter::Favourite,
+            "tagged" => Filter::Tagged,
+            "untagged" => Filter::Not(Box::new(Filter::Tagged)),
             _ => return None,
         },
         "col" | "collection" => Filter::CollectionName(lower),
+        "tag" => Filter::Tag(ts_model::normalize_tag(value)?),
         "folder" => Filter::FolderPath(lower),
         key if key.starts_with(|c: char| c.is_ascii_alphabetic()) => {
             let (min, max) = parse_range(value)?;
@@ -141,8 +153,9 @@ mod tests {
 
     #[test]
     fn parses_the_documented_example() {
-        let q =
-            Query::parse(r#"garamond script:cyrillic feat:ss01 wght:>600 col:"2. SANS SERIF" is:active -is:italic"#);
+        let q = Query::parse(
+            r#"garamond script:cyrillic feat:ss01 wght:>600 col:"2. SANS SERIF" is:active -is:italic #serif/slab"#,
+        );
         assert_eq!(q.text, "garamond");
         assert_eq!(
             q.filters,
@@ -153,6 +166,21 @@ mod tests {
                 Filter::CollectionName("2. sans serif".into()),
                 Filter::Active,
                 Filter::Not(Box::new(Filter::Italic)),
+                Filter::Tag("serif/slab".into()),
+            ]
+        );
+    }
+
+    #[test]
+    fn tags() {
+        let q = Query::parse(r##"-#display tag:Serif/Slab #"hand made/ brush" # c#"##);
+        assert_eq!(q.text, "# c#");
+        assert_eq!(
+            q.filters,
+            [
+                Filter::Not(Box::new(Filter::Tag("display".into()))),
+                Filter::Tag("Serif/Slab".into()),
+                Filter::Tag("hand made/brush".into()),
             ]
         );
     }
