@@ -11,6 +11,15 @@ name: Release
 on:
   push:
     tags: ['v*']
+  # Re-runs a release for an existing tag (Actions → Release → Run workflow), e.g. after a failed build.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to build (vX.Y.Z or vX.Y.Z.N)
+        required: true
+
+env:
+  TAG: ${{ inputs.tag || github.ref_name }}
 
 permissions:
   contents: write
@@ -24,6 +33,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
+          ref: ${{ env.TAG }}
           fetch-depth: 0 # tags and history, for the release notes
       - uses: pnpm/action-setup@v4
         with:
@@ -42,7 +52,7 @@ jobs:
       - name: Version and release notes
         id: meta
         working-directory: app
-        run: pnpm exec tsx scripts/release-notes.ts "$GITHUB_REF_NAME" ../notes.md >> "$GITHUB_OUTPUT"
+        run: pnpm exec tsx scripts/release-notes.ts "$TAG" ../notes.md >> "$GITHUB_OUTPUT"
       - run: pnpm typecheck && pnpm test
         working-directory: app
       - run: cargo test --workspace
@@ -56,7 +66,7 @@ jobs:
         run: pnpm tauri build --config '{"version":"${{ steps.meta.outputs.version }}"}'
       - name: Updater manifest
         working-directory: app
-        run: pnpm exec tsx scripts/latest-json.ts "$GITHUB_REF_NAME" "${{ steps.meta.outputs.version }}" ../notes.md ../target/release/bundle/nsis ../latest.json
+        run: pnpm exec tsx scripts/latest-json.ts "$TAG" "${{ steps.meta.outputs.version }}" ../notes.md ../target/release/bundle/nsis ../latest.json
 
       - name: CLI and Adobe plugins
         run: |
@@ -69,7 +79,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: >
-          gh release create "$GITHUB_REF_NAME" --title "${{ steps.meta.outputs.title }}" --notes-file notes.md
+          gh release create "$TAG" --title "${{ steps.meta.outputs.title }}" --notes-file notes.md
           ${{ steps.meta.outputs.prerelease == 'true' && '--prerelease' || '--latest' }}
           target/release/bundle/nsis/*-setup.exe target/release/bundle/nsis/*-setup.exe.sig latest.json
           typeshelf-cli.exe typeshelf-uxp-photoshop.zip typeshelf-uxp-indesign.zip
